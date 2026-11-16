@@ -68,8 +68,14 @@ typedef struct pp_stats
 
 /* Opens path (password may be NULL or ""). store: bytes MuPDF may keep of
    decoded pictures and fonts between pages. On failure returns NULL, with
-   *err one of PP_E_* and msg (msglen bytes) saying why in English. */
+   *err one of PP_E_* and msg (msglen bytes) saying why in English. A file
+   that needs a password not given (or a wrong one) comes back open, with
+   *err PP_E_PASSWORD: try passwords with pp_authenticate. */
 pp_doc *pp_open(const char *path, const char *password, unsigned int store, int *err, char *msg, int msglen);
+/* PP_OK (the file can now be read), or PP_E_PASSWORD */
+int pp_authenticate(pp_doc *d, const char *password, char *msg, int msglen);
+/* it still needs its password */
+int pp_locked(pp_doc *d);
 void pp_close(pp_doc *d);
 int pp_pages(pp_doc *d);
 /* the document's title from its information dictionary, UTF-8 ("" if none) */

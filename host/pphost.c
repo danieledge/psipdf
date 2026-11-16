@@ -86,7 +86,17 @@ int main(int argc, char **argv)
 	}
 	{
 		long t = pp_ms();
-		d = pp_open(argv[i + 1], pw, store * 1024u, &err, msg, sizeof msg);
+		d = pp_open(argv[i + 1], NULL, store * 1024u, &err, msg, sizeof msg);
+		if (d && err == PP_E_PASSWORD)
+		{
+			err = pp_authenticate(d, pw, msg, sizeof msg);
+			printf("password: %d %s\n", err, err ? msg : "");
+			if (err)
+			{
+				pp_close(d);
+				return 1;
+			}
+		}
 		if (!d)
 		{
 			printf("open: %d %s\n", err, msg);

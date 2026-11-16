@@ -11,6 +11,7 @@
 #include <e32base.h>
 #include <f32file.h>
 #include <fbs.h>
+#include <string.h>
 #include "psibell.h"
 #include "psipdf.h"
 
@@ -44,6 +45,7 @@ struct TPpEngine
 	TInt iRows;                          // its height
 	TInt iFill;                          // a white byte at its depth
 	TUint iLastRing;
+	char iPath[256];                     // iDoc's file
 	};
 
 static void Copy(char* aDst, int aMax, const char* aSrc)
@@ -86,16 +88,23 @@ extern "C" int PpRow(void* aUser, int aY, const unsigned char* aData, int aBytes
 static void DoOpen(TPpEngine& e)
 	{
 	PpShared* s = e.iS;
-	if (e.iDoc)
-		{
-		pp_close(e.iDoc);
-		e.iDoc = NULL;
-		}
 	int err;
-	unsigned int store = (s->store_kb > 0 ? s->store_kb : 1024) * 1024u;
-	e.iDoc = pp_open(s->path, s->text, store, &err, s->msg, sizeof(s->msg));
+	// the file open already, waiting for its password: tried, not opened again
+	if (e.iDoc && pp_locked(e.iDoc) && !strncmp(e.iPath, s->path, sizeof(e.iPath)))
+		err = pp_authenticate(e.iDoc, s->text, s->msg, sizeof(s->msg));
+	else
+		{
+		if (e.iDoc)
+			{
+			pp_close(e.iDoc);
+			e.iDoc = NULL;
+			}
+		unsigned int store = (s->store_kb > 0 ? s->store_kb : 1024) * 1024u;
+		e.iDoc = pp_open(s->path, s->text, store, &err, s->msg, sizeof(s->msg));
+		Copy(e.iPath, sizeof(e.iPath), s->path);
+		}
 	Mem::FillZ(s->text, sizeof(s->text));        // (the password, gone once used)
-	if (!e.iDoc)
+	if (!e.iDoc || err != PP_OK)
 		{
 		s->result = err;
 		return;

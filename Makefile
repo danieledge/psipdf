@@ -42,9 +42,12 @@ export PATH := /usr/bin:/bin:$(SDK)/gcc-3.0-psion-98r2-9/bin:$(E)/tools
 export WINEDEBUG := -all
 export TMP := /tmp/
 CC      := arm-pe-gcc
-# ARMv4 with no Thumb, so nothing returns with BX: the netBook's SA-1100 has
-# none (the Series 5mx's ARM710T runs the same code); soft float
-ARCH    := -O2 -fomit-frame-pointer -fno-strict-aliasing -nostdinc -march=armv4 -mno-thumb-interwork -mapcs-32 -msoft-float
+# The ARM710's instruction set, as PsiWeb's engine is built: one psipdf.exe for
+# the Series 5mx (ARM710T) and the netBook (SA-1100, which runs it as it is;
+# libgcc's BX made MOV PC by v4bx.mk). Built for ARMv4 (halfword loads and
+# the rest), the engine brought down the whole 5mx in the emulator as it
+# opened an encrypted file. Soft float.
+ARCH    := -O2 -fomit-frame-pointer -fno-strict-aliasing -nostdinc -mcpu=arm710 -mapcs-32 -mshort-load-bytes -msoft-float
 DEFS    := -D__SYMBIAN32__ -D__PSISOFT32__ -D__GCC32__ -D__EPOC32__ -D__MARM__ -D__EXE__ -DNDEBUG
 CFLAGS  := $(ARCH) $(DEFS) -std=gnu99 -fno-builtin -w -Iengine/mu/inc -I$(CORE)/web/compat -I$(E)/include/libc -I$(E)/include \
 	-include engine/mu/ppcompat.h

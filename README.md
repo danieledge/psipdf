@@ -4,6 +4,8 @@ PDF files on the **Psion netBook** and the **Psion Series 5mx** (EPOC Release 5)
 
 PsiPDF opens a PDF from the System screen, from PsiHub or with File > Open, and shows its first page (or the page you left it at) fitted to the width of the screen. It draws real PDF files: embedded fonts, the 14 standard fonts, colour, lines and fills, and JPEG photos. On the netBook pages show in EPOC's 256 colours, error-diffused; on the 5mx in 16 greys.
 
+![A page from Coda's Print to PDF, fitted to the width](docs/img/coda-fit-width.png)
+
 ## Contents
 
 - [Using it](#using-it)
@@ -41,6 +43,14 @@ The page appears as it is drawn, from the top down, with "Drawing page..." botto
 
 PsiPDF remembers the last eight files with their page and zoom, and opens the last file again when started from its icon (`C:\System\Apps\PsiPDF\PsiPDF.ini`). A file that needs a password asks for it.
 
+| | |
+|---|---|
+| ![A full-page photo](docs/img/photo-fit-width.png) | ![Two columns in embedded fonts](docs/img/text-fit-width.png) |
+| ![Find: the word found, inverted](docs/img/find-found.png) | ![Go to page](docs/img/go-to-page.png) |
+| ![PDF files on the System screen](docs/img/system-screen-pdfs.png) | ![The Series 5mx, in 16 greys](docs/img/5mx-coda.png) |
+
+Screenshots from the netBook and Series 5mx emulators, of PsiPDF's own test files.
+
 ## Installing
 
 Install `PsiPDF.sis` on the card (D:): copy it to the Psion and tap it on the System screen. It is about 1.7 MB: the program, its engine (1.5 MB), the recogniser (so that PDF files open in PsiPDF), and the EPOC C library the engine needs (the 5mx's ROM does not have it). One package serves both machines.
@@ -62,10 +72,12 @@ MuPDF 1.3 (August 2013) is the last version that is plain C with no HarfBuzz, wh
 
 ## What it does not do yet
 
-- **Not tested:** encrypted files other than RC4 with a user password, Type 3 fonts, shadings (gradients), transparency groups, CMYK and ICC colours, very long documents (hundreds of pages), progressive JPEGs, and any real netBook or 5mx: only the emulators.
+- **Not tested:** encrypted files other than 128-bit RC4 (AES, and revisions 5 and 6), Type 3 fonts, shadings (gradients), transparency groups, CMYK and ICC colours, very long documents (hundreds of pages), progressive JPEGs, and any real netBook or 5mx: only the emulators.
+- **Encrypted files on the Series 5mx:** in the 5mx emulator, opening an encrypted file (with or without a password to open it) switches the emulated machine off. The same files open on the netBook, and unencrypted files open on the 5mx. Not understood yet; to be tried on a real 5mx.
+- **Big pictures at high zoom:** a full-page photo at 100% or more is decoded at full size (about 11 MB for a 1237 x 1280 JPEG), which is slow on the netBook and too much for the 5mx (PsiPDF then goes back to fit width).
 - **Left out of the build:** JavaScript, CJK fonts and CMaps (Chinese, Japanese and Korean text shows in a substitute or not at all), forms (filled-in fields show only as the file drew them), saving, JBIG2 and JPEG 2000 pictures (these show as blank, and the page says it could not all be drawn).
 - **Not there yet:** links, the outline (bookmarks), text selection and copying, rotating a page, printing.
-- **Speed.** The netBook's SA-1100 has no floating point, and MuPDF does much of its work in floats: a text page takes about 1 to 1.5 s in the emulator, a photo page 2 to 3 s. On the 5mx (ARM710T at 36 MHz) expect about five times as long.
+- **Speed.** The netBook's SA-1100 has no floating point, and MuPDF does much of its work in floats. In the netBook emulator a page fitted to the width takes, the first time: a page from Coda's Print to PDF 1.2 s, a two-column page in embedded fonts 2.0 s, a plain text page 1.3 to 1.8 s, a full-page photo 3.1 s. A zoom of a page already drawn skips the interpretation (a Coda page at 150%: 1.8 s), and the next page is usually ready before you turn to it. On the 5mx (ARM710T at 36 MHz) a Coda page took about 8 s.
 
 ## Building
 

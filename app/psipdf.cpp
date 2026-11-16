@@ -72,11 +72,14 @@ enum { EZoomFitWidth = 0, EZoomFitPage, EZoom100, EZoom150, EZoom200, EZoomCount
 const TInt KPpRecent = 8;                    // files whose page and zoom are remembered
 const TInt KPpMaxBytes = 6 * 1024 * 1024;    // the biggest page bitmap
 const TInt KPpAheadSpare = 3 * 1024 * 1024;  // free memory left after drawing ahead
-// MuPDF draws a page in bands of about this (RGBA): 64 rows 640 wide, so
-// its pixmap is 160 KB rather than 2.3 MB for a whole page. (Each band runs
-// the page's display list again, but ppcore.c's line splitter gives each
-// line of text its own box, so a band draws only the lines it crosses.)
-const TInt KPpBandBytes = 163840;
+// MuPDF draws a page in bands of about this much RGBA: on the netBook 512 KB
+// (200 rows 640 wide, a quarter of a fitted A4 page, where the whole page's
+// pixmap would be 2.3 MB), on the 5mx, with half the memory, 160 KB (64
+// rows). Each band runs the page's display list again: ppcore.c's line
+// splitter gives each line of text its own box, so a band draws only the
+// lines it crosses, but a picture is scaled again for each band it is in.
+const TInt KPpBandBytesColour = 524288;
+const TInt KPpBandBytesGrey = 163840;
 const TInt KPpDogEar = 20;                   // the dog-ears' size
 const TInt KPpPollTick = 250000;             // the engine looked at (besides its bell) while busy
 const TInt KPpSoon = 200000;                 // a new page or zoom drawn this long after the last key
@@ -183,6 +186,11 @@ private:
 	TBool SizeKnown(TInt aPage) const { return iSizes && iSizes[2 * aPage] > 0; }
 	TInt ScaleFor(TInt aPage, TInt aZoom) const;
 	TSize PixelsFor(TInt aPage, TInt aScale) const;
+	TInt BandFor(TInt aWidth) const
+		{
+		TInt bytes = iMode == EColor256 ? KPpBandBytesColour : KPpBandBytesGrey;
+		return Max(16, Min(256, bytes / (Max(1, aWidth) * 4)));
+		}
 	TInt CreatePic(TPpPic& aPic, TInt aPage, TInt aScale);
 	void DropPic(TPpPic& aPic);
 	void SwapPics();
@@ -262,6 +270,8 @@ private:
 	TInt iHits, iHitIndex;
 	TInt iHit[PP_MAX_HITS][4];
 	TInt iFindFrom;              // the page the search started from
+	TInt iFindPending;           // a find to start when the engine is free: its first page + 1, else 0
+	TInt iFindAt;                // the page the busy message names
 	// settings
 	TPpRecentFile iRecent[KPpRecent];
 	TInt iRecentCount;
@@ -638,7 +648,7 @@ void CPpAppUi::ShowToolBarL(TBool aShow)
 	ClampOrigin();
 	iView->DrawNow();
 	SaveSettings();
-	Pump();                              // (a fitted zoom is fitted to the new room)
+	PumpSoon();                          // (a fitted zoom is fitted to the new room)
 	}
 
 // ----- the engine ------------------------------------------------------------
@@ -807,6 +817,13 @@ void CPpAppUi::Poll()
 			iJob = 0;
 			TRAPD(err, JobDoneL(job));
 			Pump();
+			}
+		else if (iJob == PP_CMD_FIND && iS->find_at != iFindAt && iS->find_at != iFindFrom)
+			{
+			iFindAt = iS->find_at;
+			TBuf<32> t;
+			t.Format(_L("Finding... page %d"), iFindAt + 1);
+			Busy(t);
 			}
 		else if (iJob == PP_CMD_RENDER && iJobPic)
 			{
@@ -1049,6 +1066,11 @@ void CPpAppUi::PumpL()
 		Send(PP_CMD_OPEN);
 		return;
 		}
+	if (iFindPending && iOpen)
+		{
+		StartFind(iFindPending - 1);
+		return;
+		}
 	if (!SizeKnown(iPage))
 		{
 		s->page = iPage;
@@ -1109,7 +1131,7 @@ void CPpAppUi::PumpL()
 			s->scale = scale;
 			s->bitmap = iShown.iBmp->Handle();
 			s->depth = iMode == EColor256 ? PP_DEPTH_COLOUR : PP_DEPTH_GREY;
-			s->band = Max(16, Min(256, KPpBandBytes / (iShown.iBmp->SizeInPixels().iWidth * 4)));
+			s->band = BandFor(iShown.iBmp->SizeInPixels().iWidth);
 			iJobPic = &iShown;
 			Busy(_L("Drawing page..."));
 			Send(PP_CMD_RENDER);
@@ -1146,7 +1168,7 @@ void CPpAppUi::PumpL()
 	s->scale = nscale;
 	s->bitmap = iAhead.iBmp->Handle();
 	s->depth = iMode == EColor256 ? PP_DEPTH_COLOUR : PP_DEPTH_GREY;
-	s->band = Max(16, Min(256, KPpBandBytes / (ns.iWidth * 4)));
+	s->band = BandFor(ns.iWidth);
 	iJobPic = &iAhead;
 	Send(PP_CMD_RENDER);
 	}
@@ -1201,6 +1223,7 @@ void CPpAppUi::CloseDocument()
 	iPages = 0;
 	iHitPage = -1;
 	iHits = 0;
+	iFindPending = 0;
 	iTitle[0] = 0;
 	if (iRunning && iReady && !iJob)
 		Send(PP_CMD_CLOSE);
@@ -1709,19 +1732,26 @@ void CPpAppUi::FindNextL()
 	StartFind(iHitPage == iPage ? iPage + 1 : iPage);
 	}
 
+// Find from aFromPage: now, or (while the engine draws a page, which is
+// stopped) as soon as it is free
 void CPpAppUi::StartFind(TInt aFromPage)
 	{
-	if (!iRunning || !iReady || iJob)
-		{
-		// (the engine is busy with a page: stopped, and Find tried again shortly)
-		if (iRunning && iJob == PP_CMD_RENDER)
-			iS->cookie.abort = 1;
-		iEikonEnv->InfoMsg(_L("Not available while drawing - try again"));
-		return;
-		}
 	if (aFromPage >= iPages)
 		aFromPage = 0;
+	if (!iRunning || !iReady || iJob)
+		{
+		iFindPending = aFromPage + 1;
+		if (iRunning && iJob == PP_CMD_RENDER && !iStopping)
+			{
+			iS->cookie.abort = 1;
+			iStopping = ETrue;
+			}
+		Busy(_L("Finding..."));
+		return;
+		}
+	iFindPending = 0;
 	iFindFrom = aFromPage;
+	iFindAt = -1;
 	iS->page = aFromPage;
 	ToUtf8(iS->text, sizeof(iS->text), iFindText);
 	Busy(_L("Finding..."));

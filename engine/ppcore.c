@@ -31,6 +31,7 @@ struct pp_doc
 	fz_context *ctx;
 	pdf_document *doc;
 	int pages;
+	int locked;             /* it needs a password not given yet */
 	pp_cached cache[PP_CACHE];
 	unsigned long clock;
 };
@@ -223,6 +224,8 @@ static fz_device *new_split_device(fz_context *ctx, fz_device *to)
 
 /* ---- the document ---- */
 
+static int count_pages(pp_doc *d, int *err, char *msg, int msglen);
+
 pp_doc *pp_open(const char *path, const char *password, unsigned int store, int *err, char *msg, int msglen)
 {
 	pp_doc *d = (pp_doc *)pp_sys_malloc(sizeof(pp_doc));
@@ -278,13 +281,25 @@ pp_doc *pp_open(const char *path, const char *password, unsigned int store, int 
 	}
 	if (pdf_needs_password(d->doc) && !pdf_authenticate_password(d->doc, password ? password : ""))
 	{
+		/* (kept open: the caller asks for the password and tries it with
+		   pp_authenticate, without opening the file again) */
 		*err = PP_E_PASSWORD;
 		copy_msg(msg, msglen, password && *password ? "wrong password" : "needs a password");
+		d->locked = 1;
+		return d;
+	}
+	if (count_pages(d, err, msg, msglen) != PP_OK)
+	{
 		pdf_close_document(d->doc);
 		fz_free_context(d->ctx);
 		pp_sys_free(d);
 		return NULL;
 	}
+	return d;
+}
+
+static int count_pages(pp_doc *d, int *err, char *msg, int msglen)
+{
 	fz_try(d->ctx)
 	{
 		d->pages = pdf_count_pages(d->doc);
@@ -297,12 +312,28 @@ pp_doc *pp_open(const char *path, const char *password, unsigned int store, int 
 	{
 		*err = PP_E_DAMAGED;
 		copy_msg(msg, msglen, "no pages found");
-		pdf_close_document(d->doc);
-		fz_free_context(d->ctx);
-		pp_sys_free(d);
-		return NULL;
+		return PP_E_DAMAGED;
 	}
-	return d;
+	return PP_OK;
+}
+
+int pp_authenticate(pp_doc *d, const char *password, char *msg, int msglen)
+{
+	int err = PP_OK;
+	if (!d->locked)
+		return PP_OK;
+	if (!pdf_authenticate_password(d->doc, password ? password : ""))
+	{
+		copy_msg(msg, msglen, "wrong password");
+		return PP_E_PASSWORD;
+	}
+	d->locked = 0;
+	return count_pages(d, &err, msg, msglen);
+}
+
+int pp_locked(pp_doc *d)
+{
+	return d->locked;
 }
 
 static void drop_cached(pp_doc *d, pp_cached *c)
