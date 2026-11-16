@@ -1,0 +1,10 @@
+# MuPDF's source (fetched by fetch.sh at a pinned checksum) and every build
+third/
+build/
+# build.sh's packages, until a release is signed and committed
+dist/*.sis
+# never in the repository
+*.key
+.env
+*_local.h
+__pycache__/

@@ -1,0 +1,28 @@
+at 60
+tap 12 466
+wait 2
+tap 40 452
+wait 3
+key 3
+wait 3
+tap 100 91
+wait 1
+tap 100 91
+wait 3
+tap 110 91
+wait 1
+tap 110 91
+wait 4
+shot c1
+ctrl T
+wait 4
+shot notoolbar
+ctrl T
+wait 4
+shot toolbar
+sctrl W
+wait 4
+shot fitpage
+ctrl W
+wait 4
+shot fitwidth

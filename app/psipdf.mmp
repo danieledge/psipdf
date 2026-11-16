@@ -1,0 +1,17 @@
+// PSIPDF.MMP - PsiPDF.app, the program (its engine is psipdf.exe: ../engine)
+// Copyright (C) 2026 Dan Edge. AGPL-3.0-or-later: see LICENSE.
+TARGET        psipdf.app
+TARGETTYPE    app
+UID           0x1000006c 0x01000AD8
+TARGETPATH    \system\apps\psipdf
+
+PROJECT       ptproj
+SUBPROJECT    psipdf
+
+SOURCE        psipdf.cpp
+RESOURCE      psipdf.rss
+
+USERINCLUDE   \ptproj\psipdf
+SYSTEMINCLUDE \epoc32\include
+
+LIBRARY       euser.lib efsrv.lib apparc.lib cone.lib eikon.lib ws32.lib gdi.lib fbscli.lib bafl.lib

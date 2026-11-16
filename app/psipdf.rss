@@ -1,0 +1,245 @@
+// PSIPDF.RSS - PsiPDF: PDF files on the Psion netBook and Series 5mx
+// Copyright (C) 2026 Dan Edge. AGPL-3.0-or-later: see LICENSE.
+NAME PSPD
+
+#include <eikdef.rh>
+#include <eikmenu.rh>
+#include <eikmenu.hrh>
+#include <eikcmds.hrh>
+#include <eikcmbut.rh>
+#include <eiklabel.rh>
+#include <eiklabel.hrh>
+#include <eikctrls.hrh>
+#include <eiktbar.rh>
+#include <eikclock.rh>
+#include <eikspace.rh>
+#include <eikdialg.rh>
+#include <eikdialg.hrh>
+#include <eikedwin.rh>
+#include <eikmfne.rh>
+#include <eikseced.rh>
+#include <eikon.rsg>
+#include "psipdf.hrh"
+
+RESOURCE RSS_SIGNATURE { }
+
+RESOURCE TBUF { buf=""; }
+
+RESOURCE EIK_APP_INFO
+	{
+	menubar=r_pp_menubar;
+	hotkeys=r_pp_hotkeys;
+	toolbar=r_pp_toolbar;
+	}
+
+// The toolbar, as the built-in programs have it: the file's name (a tap
+// shows the open programs), Previous and Next page, Zoom in and Zoom out,
+// the page shown ("Page 3" over "of 12"), and the clock. Pictures from
+// PsiPDF.mbm (pkg/mkicon.py), set at start-up.
+RESOURCE TOOLBAR r_pp_toolbar
+	{
+	breadth=KEikStdToolBarWidth;
+	controls=
+		{
+		TBAR_CTRL
+			{
+			type=EEikCtFileNameLabel;
+			id=EPpCmdFileName;
+			flags=EEikToolBarCtrlHasSetMinLength;
+			length=KEikStdFileNameLabelHeight;
+			},
+		TBAR_BUTTON { id=EPpCmdPrev; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Previous"; flags=EEikToolBarCtrlHasSetMinLength; length=40; },
+		TBAR_BUTTON { id=EPpCmdNext; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Next"; flags=EEikToolBarCtrlHasSetMinLength; length=40; },
+		TBAR_BUTTON { id=EPpCmdZoomIn; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Zoom\nin"; flags=EEikToolBarCtrlHasSetMinLength; length=40; },
+		TBAR_BUTTON { id=EPpCmdZoomOut; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Zoom\nout"; flags=EEikToolBarCtrlHasSetMinLength; length=40; },
+		TBAR_CTRL
+			{
+			type=EEikCtLabel;
+			id=EPpCmdPageLabel;
+			flags=EEikToolBarCtrlHasSetMinLength;
+			length=34;
+			control=LABEL { horiz_align=EEikLabelAlignHCenter; vert_align=EEikLabelAlignVCenter; standard_font=EEikLabelFontAnnotation; reserve_length=14; txt=""; };
+			},
+		TBAR_CTRL
+			{
+			type=EEikCtSpacer;
+			flags=EEikToolBarCtrlHasSetMinLength|EEikToolBarCtrlIsStretchable;
+			length=0;
+			control=SPACER;
+			},
+		TBAR_CTRL
+			{
+			type=EEikCtClock;
+			control=CLOCK { digitalresourceid=R_EIK_DIGITAL_CLOCK; analogresourceid=R_EIK_ANALOG_CLOCK; };
+			},
+		TBAR_CTRL
+			{
+			type=EEikCtSpacer;
+			flags=EEikToolBarCtrlHasSetMinLength;
+			length=KEikStdGapBelowClock;
+			control=SPACER;
+			}
+		};
+	}
+
+RESOURCE HOTKEYS r_pp_hotkeys
+	{
+	control=
+		{
+		HOTKEY { command=EEikCmdExit; key='e'; },
+		HOTKEY { command=EPpCmdFind; key='f'; },
+		HOTKEY { command=EPpCmdGoTo; key='g'; },
+		HOTKEY { command=EPpCmdFindNext; key='j'; },
+		HOTKEY { command=EPpCmdZoomIn; key='m'; },
+		HOTKEY { command=EPpCmdOpen; key='o'; },
+		HOTKEY { command=EPpCmdToolbar; key='t'; },
+		HOTKEY { command=EPpCmdFitWidth; key='w'; }
+		};
+	shift_control=
+		{
+		HOTKEY { command=EPpCmdAbout; key='a'; },
+		HOTKEY { command=EPpCmdPrev; key='b'; },
+		HOTKEY { command=EPpCmdDetails; key='d'; },
+		HOTKEY { command=EPpCmdZoomOut; key='m'; },
+		HOTKEY { command=EPpCmdNext; key='n'; },
+		HOTKEY { command=EPpCmdFitPage; key='w'; }
+		};
+	}
+
+RESOURCE MENU_BAR r_pp_menubar
+	{
+	titles=
+		{
+		MENU_TITLE { menu_pane=r_pp_file_menu; txt="File"; },
+		MENU_TITLE { menu_pane=r_pp_edit_menu; txt="Edit"; },
+		MENU_TITLE { menu_pane=r_pp_view_menu; txt="View"; },
+		MENU_TITLE { menu_pane=r_pp_tools_menu; txt="Tools"; }
+		};
+	}
+
+RESOURCE MENU_PANE r_pp_file_menu
+	{
+	items=
+		{
+		MENU_ITEM { command=EPpCmdOpen; txt="Open file..."; },
+		MENU_ITEM { command=EPpCmdDetails; txt="Document details..."; flags=EEikMenuItemSeparatorAfter; },
+		MENU_ITEM { command=EEikCmdExit; txt="Close"; }
+		};
+	}
+
+RESOURCE MENU_PANE r_pp_edit_menu
+	{
+	items=
+		{
+		MENU_ITEM { command=EPpCmdFind; txt="Find..."; },
+		MENU_ITEM { command=EPpCmdFindNext; txt="Find next"; flags=EEikMenuItemSeparatorAfter; },
+		MENU_ITEM { command=EPpCmdGoTo; txt="Go to page..."; }
+		};
+	}
+
+RESOURCE MENU_PANE r_pp_view_menu
+	{
+	items=
+		{
+		MENU_ITEM { command=EPpCmdNext; txt="Next page"; },
+		MENU_ITEM { command=EPpCmdPrev; txt="Previous page"; },
+		MENU_ITEM { command=EPpCmdFirst; txt="First page"; },
+		MENU_ITEM { command=EPpCmdLast; txt="Last page"; flags=EEikMenuItemSeparatorAfter; },
+		MENU_ITEM { command=EPpCmdZoomIn; txt="Zoom in"; },
+		MENU_ITEM { command=EPpCmdZoomOut; txt="Zoom out"; },
+		MENU_ITEM { cascade=r_pp_zoom_menu; txt="Zoom"; flags=EEikMenuItemSeparatorAfter; },
+		MENU_ITEM { command=EPpCmdToolbar; txt="Show toolbar"; flags=EEikMenuItemCheckBox; }
+		};
+	}
+
+RESOURCE MENU_PANE r_pp_zoom_menu
+	{
+	items=
+		{
+		MENU_ITEM { command=EPpCmdFitWidth; txt="Fit width"; flags=EEikMenuItemRadioStart; },
+		MENU_ITEM { command=EPpCmdFitPage; txt="Fit page"; flags=EEikMenuItemRadioMiddle; },
+		MENU_ITEM { command=EPpCmdZoom100; txt="100%"; flags=EEikMenuItemRadioMiddle; },
+		MENU_ITEM { command=EPpCmdZoom150; txt="150%"; flags=EEikMenuItemRadioMiddle; },
+		MENU_ITEM { command=EPpCmdZoom200; txt="200%"; flags=EEikMenuItemRadioEnd; }
+		};
+	}
+
+RESOURCE MENU_PANE r_pp_tools_menu
+	{
+	items=
+		{
+		MENU_ITEM { command=EPpCmdAbout; txt="About PsiPDF"; }
+		};
+	}
+
+// Edit > Go to page: the page's number, and how many there are (set at
+// run time). Fixed widths: the dialog is the same size for every file.
+RESOURCE DIALOG r_pp_goto_dialog
+	{
+	title="Go to page";
+	flags=EEikDialogFlagWait;
+	buttons=R_EIK_BUTTONS_CANCEL_OK;
+	items=
+		{
+		DLG_LINE { type=EEikCtNumberEditor; prompt="Page"; id=EPpDlgPage; control=NUMBER_EDITOR { min=1; max=99999; }; },
+		DLG_LINE { type=EEikCtLabel; id=EPpDlgPageCount; control=LABEL { standard_font=EEikLabelFontAnnotation; reserve_length=24; txt="-"; }; }
+		};
+	}
+
+// Edit > Find: the text (any case), found from the page shown onwards
+RESOURCE DIALOG r_pp_find_dialog
+	{
+	title="Find";
+	flags=EEikDialogFlagWait;
+	buttons=R_EIK_BUTTONS_CANCEL_OK;
+	items=
+		{
+		DLG_LINE { type=EEikCtEdwin; prompt="Find"; id=EPpDlgFindText; control=EDWIN { width=20; maxlength=60; }; }
+		};
+	}
+
+// a file that needs a password to open
+RESOURCE DIALOG r_pp_password_dialog
+	{
+	title="Password";
+	flags=EEikDialogFlagWait;
+	buttons=R_EIK_BUTTONS_CANCEL_OK;
+	items=
+		{
+		DLG_LINE { type=EEikCtLabel; id=EPpDlgPasswordFile; control=LABEL { reserve_length=32; txt="-"; }; },
+		DLG_LINE { type=EEikCtSecretEd; prompt="Password"; id=EPpDlgPassword; control=SECRETED { num_letters=20; }; }
+		};
+	}
+
+// File > Document details: the file, its title, pages and size (set at run time)
+RESOURCE DIALOG r_pp_details_dialog
+	{
+	title="Document details";
+	flags=EEikDialogFlagWait;
+	buttons=R_EIK_BUTTONS_CONTINUE;
+	items=
+		{
+		DLG_LINE { type=EEikCtLabel; id=EPpDlgDetails1; control=LABEL { reserve_length=40; txt="-"; }; },
+		DLG_LINE { type=EEikCtLabel; id=EPpDlgDetails2; control=LABEL { reserve_length=40; txt="-"; }; },
+		DLG_LINE { type=EEikCtLabel; id=EPpDlgDetails3; control=LABEL { reserve_length=40; txt="-"; }; },
+		DLG_LINE { type=EEikCtLabel; id=EPpDlgDetails4; control=LABEL { reserve_length=40; txt="-"; }; }
+		};
+	}
+
+// Tools > About PsiPDF. The version and the copyright sign (0xa9 in the
+// Psion's fonts) are set at run time (CPpAboutDialog).
+RESOURCE DIALOG r_pp_about_dialog
+	{
+	title="About PsiPDF";
+	flags=EEikDialogFlagWait;
+	buttons=R_EIK_BUTTONS_CONTINUE;
+	items=
+		{
+		DLG_LINE { type=EEikCtLabel; id=EPpDlgAboutName; control=LABEL { standard_font=EEikLabelFontLegend; reserve_length=20; txt="PsiPDF"; }; },
+		DLG_LINE { type=EEikCtLabel; id=EPpDlgAboutText; control=LABEL { reserve_length=60; txt="-"; }; },
+		DLG_LINE { type=EEikCtLabel; id=EPpDlgAboutMuPdf; control=LABEL { standard_font=EEikLabelFontAnnotation; reserve_length=60; txt="-"; }; },
+		DLG_LINE { type=EEikCtLabel; id=EPpDlgAboutSource; control=LABEL { standard_font=EEikLabelFontAnnotation; txt="Free software: the source is at github.com/danieledge/psipdf"; }; }
+		};
+	}
+
+RESOURCE TBUF r_pp_open_title { buf="Open PDF file"; }

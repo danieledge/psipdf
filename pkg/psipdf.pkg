@@ -1,0 +1,23 @@
+; PsiPDF 0.01: PDF files on the Psion netBook and Series 5mx (EPOC R5),
+; drawn by MuPDF. One package for both machines. Built by build.sh sis.
+; Copyright (C) 2026 Dan Edge. AGPL-3.0-or-later: see LICENSE.
+&EN
+; Two-digit versions, as Dan Edge's other programs: the EPOC installer
+; compares major.minor only.
+#{"PsiPDF"},(0x01000AD8),0,1,0
+"psipdf.app"-"!:\System\Apps\PsiPDF\PsiPDF.app"
+"psipdf.rsc"-"!:\System\Apps\PsiPDF\PsiPDF.rsc"
+"psipdf.aif"-"!:\System\Apps\PsiPDF\PsiPDF.aif"
+"psipdf.mbm"-"!:\System\Apps\PsiPDF\PsiPDF.mbm"
+"psipdf.exe"-"!:\System\Apps\PsiPDF\psipdf.exe"
+; the licence and the notices (AGPL-3.0: where the source is, what is in it)
+"LICENSE"-"!:\System\Apps\PsiPDF\LICENSE.txt"
+"NOTICE"-"!:\System\Apps\PsiPDF\NOTICE.txt"
+; the recogniser last, once the program it names is in place
+"psipdf.mdl"-"!:\System\Recogs\PsiPDF.mdl"
+; its settings and log: not installed, removed with the program
+""-"C:\System\Apps\PsiPDF\PsiPDF.ini",FN
+""-"C:\System\Apps\PsiPDF\PsiPDF.log",FN
+""-"C:\System\Apps\PsiPDF\PsiPDF.old",FN
+; the EPOC C library (ESTLIB.DLL), which the engine needs and the 5mx ROM lacks
+@"STDLIB.SIS",(0x100002c3)

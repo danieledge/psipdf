@@ -1,0 +1,32 @@
+at 60
+tap 12 466
+wait 2
+tap 40 452
+wait 3
+key 3
+wait 3
+tap 100 91
+wait 1
+tap 100 91
+wait 3
+tap 110 268
+wait 1
+tap 110 268
+wait 1
+shot p1
+wait 1
+shot p2
+wait 1
+shot p3
+wait 2
+shot p5
+wait 4
+shot p9
+sctrl D
+wait 3
+shot details
+key 4
+wait 2
+tap 605 125
+wait 10
+shot z100

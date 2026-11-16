@@ -1,0 +1,6 @@
+// pplaunch.rss - the test launcher's resources (see pplaunch.cpp)
+NAME PPLA
+#include <eikdef.rh>
+RESOURCE RSS_SIGNATURE { }
+RESOURCE TBUF { buf=""; }
+RESOURCE EIK_APP_INFO { }

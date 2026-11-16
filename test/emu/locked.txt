@@ -1,0 +1,20 @@
+at 60
+tap 12 466
+wait 2
+tap 40 452
+wait 3
+key 3
+wait 3
+tap 100 91
+wait 1
+tap 100 91
+wait 3
+tap 110 150
+wait 1
+tap 110 150
+wait 4
+shot ask
+type psion
+key 3
+wait 6
+shot opened

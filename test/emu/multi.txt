@@ -1,0 +1,49 @@
+at 60
+tap 12 466
+wait 2
+tap 40 452
+wait 3
+key 3
+wait 3
+tap 100 91
+wait 1
+tap 100 91
+wait 3
+tap 110 209
+wait 1
+tap 110 209
+wait 4
+shot m1
+wait 4
+tap 605 83
+wait 0.5
+shot m2
+wait 4
+tap 562 472
+wait 4
+shot m3
+tap 605 43
+wait 3
+shot back2
+ctrl G
+wait 2
+shot goto
+type 9
+key 3
+wait 6
+shot p9
+ctrl F
+wait 2
+type aubergine
+shot find
+key 3
+wait 8
+shot found
+ctrl J
+wait 10
+shot found2
+sctrl D
+wait 3
+shot details
+key 4
+wait 1

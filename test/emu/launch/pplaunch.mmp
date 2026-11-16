@@ -1,0 +1,16 @@
+// pplaunch.mmp - the netBook emulator's test launcher (Jotter's UID: emulator only)
+TARGET        pplaunch.app
+TARGETTYPE    app
+UID           0x1000006c 0x10000CEA
+TARGETPATH    \system\apps\pplaunch
+
+PROJECT       ptproj
+SUBPROJECT    pplaunch
+
+SOURCE        pplaunch.cpp
+RESOURCE      pplaunch.rss
+
+USERINCLUDE   \ptproj\pplaunch
+SYSTEMINCLUDE \epoc32\include
+
+LIBRARY       euser.lib efsrv.lib apparc.lib cone.lib eikon.lib bafl.lib

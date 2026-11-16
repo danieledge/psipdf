@@ -1,0 +1,16 @@
+// PPREC.MMP - PsiPDF.mdl: PDF files open in PsiPDF (\System\Recogs)
+// Copyright (C) 2026 Dan Edge. AGPL-3.0-or-later: see LICENSE.
+TARGET        pprec.mdl
+TARGETTYPE    dll
+UID           0x10000C07 0x01000AD9
+
+PROJECT       ptproj
+SUBPROJECT    pprec
+
+SOURCE        pprec.cpp
+
+USERINCLUDE   \ptproj\pprec
+SYSTEMINCLUDE \epoc32\include
+
+LIBRARY       euser.lib efsrv.lib apmime.lib
+EXPORTUNFROZEN
