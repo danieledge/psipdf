@@ -1857,7 +1857,9 @@ void CPpAppUi::HandleCommandL(TInt aCommand)
 	case EPpCmdPrev: TurnL(-1); break;
 	case EPpCmdFirst: if (!NoFile()) GoToPageL(0); break;
 	case EPpCmdLast: if (!NoFile()) GoToPageL(iPages - 1); break;
+	case EEikCmdZoomIn:                      // (the Zoom icons beside the screen)
 	case EPpCmdZoomIn: ZoomStepL(1); break;
+	case EEikCmdZoomOut:
 	case EPpCmdZoomOut: ZoomStepL(-1); break;
 	case EPpCmdFitWidth: SetZoomL(EZoomFitWidth); break;
 	case EPpCmdFitPage: SetZoomL(EZoomFitPage); break;
