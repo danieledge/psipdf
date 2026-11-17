@@ -46,6 +46,7 @@ struct TPpEngine
 	TInt iFill;                          // a white byte at its depth
 	TUint iLastRing;
 	char iPath[256];                     // iDoc's file
+	TRequestStatus* iGone;               // completes when the app's thread ends
 	};
 
 static void Copy(char* aDst, int aMax, const char* aSrc)
@@ -82,7 +83,8 @@ extern "C" int PpRow(void* aUser, int aY, const unsigned char* aData, int aBytes
 	// (the app redraws what has come: at most 8 times a second)
 	if (User::TickCount() - e.iLastRing >= 8)
 		RingApp(e);
-	return e.iS->cookie.abort ? 1 : 0;
+	// (the app gone: stopped, so the engine ends now, not after the page)
+	return e.iS->cookie.abort || *e.iGone != KRequestPending ? 1 : 0;
 	}
 
 static void DoOpen(TPpEngine& e)
@@ -211,7 +213,7 @@ static void DoFind(TPpEngine& e)
 					s->hit[i][j] = (int)(hits[4 * i + j] * 100);
 			return;
 			}
-		if (s->cookie.abort)
+		if (s->cookie.abort || *e.iGone != KRequestPending)
 			{
 			s->result = PP_E_STOPPED;
 			return;
@@ -272,6 +274,11 @@ static TInt RunL()
 	Mem::FillZ(&e, sizeof(e));
 	// (all zero is TPsiBellRinger's state as constructed)
 	e.iS = s;
+	e.iGone = &gone;
+	// a step below the program's own thread: the app sets this process's
+	// priority to its own (Foreground in front, Background behind), and keys,
+	// the pen and the screen still never wait for MuPDF
+	RThread().SetPriority(EPriorityMuchLess);
 	// (taken before saying so: the app runs above the engine, and its first
 	// command may come before this thread runs again)
 	TUint done = s->cmd_seq;
@@ -284,7 +291,7 @@ static TInt RunL()
 		if (s->cmd_seq != done)
 			{
 			done = s->cmd_seq;
-			if (s->cmd == PP_CMD_QUIT)
+			if (s->cmd == PP_CMD_QUIT || gone != KRequestPending)
 				quit = ETrue;
 			else
 				Do(e);

@@ -83,6 +83,12 @@ const TInt KPpBandBytesGrey = 163840;
 const TInt KPpDogEar = 20;                   // the dog-ears' size
 const TInt KPpPollTick = 250000;             // the engine looked at (besides its bell) while busy
 const TInt KPpSoon = 200000;                 // a new page or zoom drawn this long after the last key
+// The engine not ready this long after it was started, or a command with no
+// progress (no band, no page found) this long, while PsiPDF is in front: it
+// is stopped and the page says why, never a blank page for ever. (A page
+// takes 1 to 3 s on the netBook, 8 s on the 5mx; a band, much less.)
+const TInt KPpStartTicks = 20 * 64;          // (1/64 s)
+const TInt KPpStuckTicks = 60 * 64;
 
 // the toolbar pictures in PsiPDF.mbm (pkg/mkicon.py), each then its mask
 enum { EMbmPpPrev = 0, EMbmPpNext = 2, EMbmPpZoomIn = 4, EMbmPpZoomOut = 6 };
@@ -222,6 +228,11 @@ private:
 	void Remember();
 	void Log(const TDesC& aText);
 	void HandleForegroundEventL(TBool aForeground);
+	// a page that cannot be shown: said in the dialog and on the page itself
+	void CannotShow(const TDesC& aWhat, const TDesC& aWhy);
+	void Watchdog();
+	void EnginePriority();
+	TInt FreeRamKb() const;
 private:
 	CPpView* iView;
 	// the engine
@@ -242,6 +253,12 @@ private:
 	TUint iJobStart;             // (ticks)
 	TBool iStopping;             // its job has been told to stop
 	TBool iEngineFailed;         // the engine ended by itself: not started again for this file
+	TUint iStartTick;            // when the engine was started (ticks)
+	TUint iProgressTick;         // when its job last moved on (ticks)
+	TInt iSeenRows, iSeenProgress, iSeenFind;
+	TBool iForeground;           // PsiPDF is in front
+	TBuf<64> iNote;              // why the page is not shown ("Could not show this page"...)
+	TBuf<100> iNoteWhy;          // ...and what to do
 	TDisplayMode iMode;          // the pages' bitmaps: EColor256 or EGray16
 	TInt iPxPerInch;
 	// the file
@@ -553,6 +570,7 @@ void CPpAppUi::ConstructL()
 	BaseConstructL();
 	iShown.iPage = iAhead.iPage = -1;
 	iHitPage = -1;
+	iForeground = ETrue;
 	TDisplayMode mode = iEikonEnv->ScreenDevice()->DisplayMode();
 	TBool colour = mode == EColor256 || mode == EColor4K || mode == EColor64K || mode == EColor16M;
 	iMode = colour ? EColor256 : EGray16;
@@ -691,23 +709,43 @@ void CPpAppUi::StartEngineL()
 	TInt r = iProcess.Create(exe, iChunk.Name());
 	if (r != KErrNone)
 		{
-		TBuf<80> l;
-		l.Format(_L("engine: could not start %S (%d)"), &exe, r);
+		TBuf<120> l;
+		l.Format(_L("engine: could not start %S (%d), free RAM %d KB"), &exe, r, FreeRamKb());
 		Log(l);
 		User::Leave(r);
 		}
-	// below the program and the window server: keys, the pen and the screen
-	// never wait for MuPDF
-	iProcess.SetPriority(::EPriorityLow);
 	iRunning = ETrue;
 	iReady = EFalse;
 	iJob = 0;
+	EnginePriority();
 	iWatcher->Watch(iProcess);
+	iStartTick = iProgressTick = User::TickCount();
 	iProcess.Resume();
 	iWaiter->Arm(&iS->app_bell);
 	if (!iTick->IsActive())
 		iTick->Start(KPpPollTick, KPpPollTick, TCallBack(TickCallback, this));
-	Log(_L("engine: started"));
+	TBuf<120> l;
+	l.Format(_L("engine: started %S, free RAM %d KB"), &exe, FreeRamKb());
+	Log(l);
+	}
+
+// The engine's process at PsiPDF's own level: Foreground while PsiPDF is in
+// front, else Background (its thread is a step below the program's: keys,
+// the pen and the screen still never wait for MuPDF). It was always Low,
+// below every program in the background: one of them busy (a sync, a web
+// page) and the engine never ran at all, not even to say it was ready, and
+// the page stayed blank.
+void CPpAppUi::EnginePriority()
+	{
+	if (iRunning)
+		iProcess.SetPriority(iForeground ? ::EPriorityForeground : ::EPriorityBackground);
+	}
+
+TInt CPpAppUi::FreeRamKb() const
+	{
+	TMemoryInfoV1Buf mem;
+	UserHal::MemoryInfo(mem);
+	return mem().iFreeRamInBytes / 1024;
 	}
 
 void CPpAppUi::StopEngine()
@@ -758,14 +796,89 @@ void CPpAppUi::EngineEnded()
 		iEngineFailed = ETrue;
 		iOpen = EFalse;
 		iOpenPending = EFalse;
-		TBuf<80> why;
+		DropPic(iShown);
+		DropPic(iAhead);
+		TBuf<100> why;
 		if (type == EExitPanic)
 			why.Format(_L("MuPDF stopped (%S %d) - the file may be damaged"), &cat, reason);
 		else
 			why = _L("MuPDF stopped - there may not be enough memory");
-		TRAPD(err, iEikonEnv->InfoWinL(_L("Cannot show this file"), why));
-		iView->DrawNow();
+		CannotShow(_L("Could not show this page"), why);
 		}
+	}
+
+// The page cannot be shown: the dialog says why, and so does the page's
+// place on the screen once it has gone (never a blank page)
+void CPpAppUi::CannotShow(const TDesC& aWhat, const TDesC& aWhy)
+	{
+	BusyEnd();
+	// (Left() panics when asked for more than there is)
+	iNote = aWhat.Left(Min(aWhat.Length(), iNote.MaxLength()));
+	iNoteWhy = aWhy.Left(Min(aWhy.Length(), iNoteWhy.MaxLength()));
+	TBuf<180> l;
+	l.Format(_L("shown: %S - %S"), &iNote, &iNoteWhy);
+	Log(l);
+	iView->DrawNow();
+	TRAPD(err, iEikonEnv->InfoWinL(iNote, iNoteWhy));
+	}
+
+// The engine not ready long after it was started, or its job stuck: stopped
+// (killed: it may not be getting the processor at all, so it cannot be asked)
+// and the page says why. Only while PsiPDF is in front: behind, the engine
+// waits for the programs in front, as it should.
+void CPpAppUi::Watchdog()
+	{
+	if (!iRunning)
+		return;
+	TUint now = User::TickCount();
+	if (!iForeground)
+		{
+		iStartTick = iProgressTick = now;
+		return;
+		}
+	if (iJob)
+		{
+		TInt rows = iS->rows_done, progress = iS->cookie.progress, find = iS->find_at;
+		if (rows != iSeenRows || progress != iSeenProgress || find != iSeenFind)
+			{
+			iSeenRows = rows;
+			iSeenProgress = progress;
+			iSeenFind = find;
+			iProgressTick = now;
+			}
+		}
+	TBool late = !iReady && now - iStartTick > (TUint)KPpStartTicks;
+	TBool stuck = iReady && iJob && now - iProgressTick > (TUint)KPpStuckTicks;
+	if (!late && !stuck)
+		return;
+	TBuf<120> l;
+	TPtrC what(late ? _L("not ready") : _L("no progress"));
+	l.Format(_L("engine: %S after %d s (command %d, state %d), free RAM %d KB: stopped"),
+		&what, (now - (late ? iStartTick : iProgressTick)) / 64,
+		iJob, iS->state, FreeRamKb());
+	Log(l);
+	TBool wasOpen = iOpen || iOpenPending;
+	iWatcher->Cancel();
+	iProcess.Kill(KErrTimedOut);
+	iProcess.Close();
+	iRunning = EFalse;
+	iReady = EFalse;
+	iJob = 0;
+	iJobPic = NULL;
+	iWaiter->Cancel();
+	iTick->Cancel();
+	iEngineFailed = ETrue;
+	iOpen = EFalse;
+	iOpenPending = EFalse;
+	iFindPending = 0;
+	DropPic(iShown);
+	DropPic(iAhead);
+	if (!wasOpen)
+		return;
+	TBool lowRam = FreeRamKb() < 3072;
+	CannotShow(_L("Could not show this page"), late ?
+		(lowRam ? _L("PsiPDF's engine did not start - close other programs") : _L("PsiPDF's engine did not start - another program may be busy")) :
+		(lowRam ? _L("PsiPDF's engine stopped answering - close other programs") : _L("PsiPDF's engine stopped answering - the page may be too complex")));
 	}
 
 void CPpAppUi::Send(TInt aCmd)
@@ -775,7 +888,10 @@ void CPpAppUi::Send(TInt aCmd)
 	iS->cmd = aCmd;
 	iJob = aCmd;
 	iStopping = EFalse;
-	iJobStart = User::TickCount();
+	iJobStart = iProgressTick = User::TickCount();
+	iSeenRows = iS->rows_done;
+	iSeenProgress = 0;
+	iSeenFind = iS->find_at;
 	iS->cmd_seq++;
 	iRinger.Ring(&iS->eng_bell);
 	if (!iTick->IsActive())
@@ -792,6 +908,7 @@ TInt CPpAppUi::TickCallback(TAny* aSelf)
 	{
 	CPpAppUi* ui = (CPpAppUi*)aSelf;
 	ui->Poll();
+	ui->Watchdog();
 	// (the tick is a safety net for a missed ring: only while something is on)
 	if (ui->iRunning && ui->iReady && !ui->iJob)
 		ui->iTick->Cancel();
@@ -860,7 +977,10 @@ void CPpAppUi::JobDoneL(TInt aCmd)
 			}
 		if (result != PP_OK)
 			{
-			Problem(_L("Cannot open this file"), result);
+			if (result == PP_E_MEMORY)
+				CannotShow(_L("Not enough memory to show this page"), _L("Close other programs, then open the file again"));
+			else
+				Problem(_L("Cannot open this file"), result);
 			iFile.Zero();
 			iEikonEnv->Process()->SetMainDocFileName(_L("PsiPDF"));
 			UpdateLabelL();
@@ -905,8 +1025,16 @@ void CPpAppUi::JobDoneL(TInt aCmd)
 		if (pic == &iShown)
 			{
 			BusyEnd();
-			if (pic->iFailed)
-				Problem(_L("Cannot draw all of this page"), result);
+			if (pic->iFailed && pic->iRows == 0)
+				{
+				// nothing of it drawn: said on the page too
+				if (result == PP_E_MEMORY)
+					CannotShow(_L("Not enough memory to show this page"), _L("Close other programs, then try again"));
+				else
+					CannotShow(_L("Could not show this page"), _L("Part of it uses a feature PsiPDF does not have"));
+				}
+			else if (pic->iFailed)
+				Problem(result == PP_E_MEMORY ? _L("Not enough memory to show all of this page") : _L("Cannot draw all of this page"), result);
 			iView->DrawNow();
 			}
 		break;
@@ -1015,18 +1143,19 @@ void CPpAppUi::PumpL()
 		TRAPD(err, StartEngineL());
 		if (err != KErrNone)
 			{
-			BusyEnd();
 			iEngineFailed = ETrue;
 			iOpenPending = EFalse;
 			TBuf<80> why;
 			if (err == KErrNotFound || err == KErrPathNotFound)
 				why = _L("psipdf.exe is missing - install PsiPDF again");
 			else if (err == KErrNoMemory)
-				why = _L("Not enough memory - close other programs");
+				{
+				CannotShow(_L("Not enough memory to show this page"), _L("Close other programs, then open the file again"));
+				return;
+				}
 			else
 				why.Format(_L("psipdf.exe did not start (%d) - install PsiPDF again"), err);
-			iEikonEnv->InfoWinL(_L("Cannot open PDF files"), why);
-			iView->DrawNow();
+			CannotShow(_L("Could not show this page"), why);
 			}
 		return;
 		}
@@ -1107,7 +1236,13 @@ void CPpAppUi::PumpL()
 				}
 			if (r != KErrNone)
 				{
-				Problem(_L("Not enough memory to show this page"), PP_E_MEMORY);
+				TBuf<80> l;
+				l.Format(_L("page %d: no bitmap (%d), free RAM %d KB"), iPage + 1, r, FreeRamKb());
+				Log(l);
+				if (iZoom == EZoomFitWidth)
+					CannotShow(_L("Not enough memory to show this page"), _L("Close other programs, then try again"));
+				else
+					Problem(_L("Not enough memory to show this page"), PP_E_MEMORY);
 				if (iZoom != EZoomFitWidth)
 					{
 					iZoom = EZoomFitWidth;
@@ -1133,6 +1268,8 @@ void CPpAppUi::PumpL()
 			s->depth = iMode == EColor256 ? PP_DEPTH_COLOUR : PP_DEPTH_GREY;
 			s->band = BandFor(iShown.iBmp->SizeInPixels().iWidth);
 			iJobPic = &iShown;
+			iNote.Zero();                    // (a page that could not be shown before: tried afresh)
+			iNoteWhy.Zero();
 			Busy(_L("Drawing page..."));
 			Send(PP_CMD_RENDER);
 			UpdateLabelL();
@@ -1186,7 +1323,10 @@ void CPpAppUi::OpenPdfL(const TDesC& aName)
 	iFile = p.FullName();
 	iPassword.Zero();
 	iEngineFailed = EFalse;
+	iNote.Zero();
+	iNoteWhy.Zero();
 	iOpenPending = ETrue;
+	Busy(_L("Opening..."));             // (at once: the engine may take a moment to start)
 	// its page and zoom from last time
 	iPage = 0;
 	iZoom = EZoomFitWidth;
@@ -1498,11 +1638,24 @@ void CPpAppUi::DrawPage(CWindowGc& aGc, const TRect& /*aRect*/) const
 	aGc.SetPenStyle(CGraphicsContext::ENullPen);
 	aGc.SetBrushStyle(CGraphicsContext::ESolidBrush);
 	TSize s = ShownSize();
-	if (!iShown.iBmp || iShown.iPage != iPage)
+	// no page to show (or none of it could be drawn): what is happening, or why not
+	TBool nothing = iShown.iDone && iShown.iFailed && iShown.iRows == 0 && iNote.Length();
+	if (!iShown.iBmp || iShown.iPage != iPage || nothing)
 		{
 		aGc.SetBrushColor(back);
 		aGc.DrawRect(v);
-		if (!iOpen && !iOpenPending)
+		TPtrC line1, line2;
+		if (iNote.Length() && !iOpenPending)
+			{
+			line1.Set(iNote);
+			line2.Set(iNoteWhy);
+			}
+		else if (!iOpen && !iOpenPending)
+			{
+			line1.Set(_L("No file open"));
+			line2.Set(_L("Ctrl+O opens a PDF file"));
+			}
+		if (line1.Length())
 			{
 			const CFont* f = iEikonEnv->NormalFont();
 			aGc.UseFont(f);
@@ -1510,8 +1663,8 @@ void CPpAppUi::DrawPage(CWindowGc& aGc, const TRect& /*aRect*/) const
 			aGc.SetPenColor(KRgbBlack);
 			aGc.SetBrushStyle(CGraphicsContext::ENullBrush);
 			TInt base = v.iTl.iY + v.Height() / 2;
-			aGc.DrawText(_L("No file open"), TRect(v.iTl.iX, base - 20, v.iBr.iX, base), f->AscentInPixels() + 2, CGraphicsContext::ECenter);
-			aGc.DrawText(_L("Ctrl+O opens a PDF file"), TRect(v.iTl.iX, base, v.iBr.iX, base + 20), f->AscentInPixels() + 2, CGraphicsContext::ECenter);
+			aGc.DrawText(line1, TRect(v.iTl.iX, base - 20, v.iBr.iX, base), f->AscentInPixels() + 2, CGraphicsContext::ECenter);
+			aGc.DrawText(line2, TRect(v.iTl.iX, base, v.iBr.iX, base + 20), f->AscentInPixels() + 2, CGraphicsContext::ECenter);
 			aGc.DiscardFont();
 			}
 		return;
@@ -2029,10 +2182,18 @@ void CPpAppUi::Remember()
 
 void CPpAppUi::HandleForegroundEventL(TBool aForeground)
 	{
+	iForeground = aForeground;
+	EnginePriority();
 	if (!aForeground)
 		{
 		Remember();
 		SaveSettings();
+		// no file: the engine (1.5 MB) is not kept waiting behind
+		if (iRunning && !iOpen && !iOpenPending)
+			{
+			StopEngine();
+			Log(_L("engine: stopped (no file, PsiPDF behind)"));
+			}
 		}
 	}
 

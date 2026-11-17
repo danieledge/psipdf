@@ -43,6 +43,8 @@ The page appears as it is drawn, from the top down, with "Drawing page..." botto
 
 PsiPDF remembers the last eight files with their page and zoom, and opens the last file again when started from its icon (`C:\System\Apps\PsiPDF\PsiPDF.ini`). A file that needs a password asks for it.
 
+A page that cannot be shown says so, in a dialog and in its place on the screen ("Could not show this page", "Not enough memory to show this page"), never a blank page. PsiPDF keeps a log of each session in `C:\System\Apps\PsiPDF\PsiPDF.log` (on the internal disk, wherever PsiPDF is installed), and the session before in `PsiPDF.old`: send both with a report. A session that never showed its page has `engine: started` with no `engine: ready` after it.
+
 | | |
 |---|---|
 | ![A full-page photo](docs/img/photo-fit-width.png) | ![Two columns in embedded fonts](docs/img/text-fit-width.png) |
