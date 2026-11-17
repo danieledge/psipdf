@@ -127,6 +127,41 @@ static int caught(pp_doc *d, int otherwise, char *msg, int len)
 
 static fz_device *target(fz_device *dev) { return (fz_device *)dev->user; }
 
+/* ---- pictures: decoded no bigger than the store can keep ----
+ *
+ * MuPDF decodes a picture at the largest power-of-two reduction that is
+ * still at least the size it is drawn (image.c), so at 100% and above a
+ * scanned page or a photo is decoded at full size: for a 1237 x 1280 JPEG
+ * its samples and its RGBA pixmap at once, 11 MB. That is more than the
+ * store keeps (store.c refuses an item bigger than its maximum), so it is
+ * decoded again for every band, and on the 5mx the allocation fails and
+ * the list player swallows the error (the picture is left blank). Each
+ * picture is asked for at a reduction whose RGBA pixmap fits in
+ * pp_image_budget (the store's size): drawn bigger, it is scaled up.
+ */
+static unsigned int pp_image_budget = 2048 * 1024;
+
+static fz_pixmap *pp_get_pixmap(fz_context *ctx, fz_image *im, int w, int h)
+{
+	int k = 0;
+	while (k < 8 && (unsigned int)(im->w >> k) * (unsigned int)(im->h >> k) * (unsigned int)(im->n + 1) > pp_image_budget)
+		k++;
+	if (k > 0)
+	{
+		int cw = im->w >> k, ch = im->h >> k;
+		if (w > cw) w = cw > 0 ? cw : 1;
+		if (h > ch) h = ch > 0 ? ch : 1;
+	}
+	return fz_image_get_pixmap(ctx, im, w, h);
+}
+
+static void pp_budget_image(fz_image *im)
+{
+	for (; im; im = im->mask)
+		if (im->get_pixmap == fz_image_get_pixmap)
+			im->get_pixmap = pp_get_pixmap;
+}
+
 static void split_text(fz_device *dev, fz_text *text, int how, fz_stroke_state *stroke,
 	const fz_matrix *ctm, fz_colorspace *cs, float *color, float alpha)
 {
@@ -181,9 +216,9 @@ static void s_clip_stroke_path(fz_device *d, fz_path *p, const fz_rect *r, fz_st
 static void s_clip_text(fz_device *d, fz_text *x, const fz_matrix *m, int acc) { fz_clip_text(target(d), x, m, acc); }
 static void s_clip_stroke_text(fz_device *d, fz_text *x, fz_stroke_state *st, const fz_matrix *m) { fz_clip_stroke_text(target(d), x, st, m); }
 static void s_fill_shade(fz_device *d, fz_shade *sh, const fz_matrix *m, float a) { fz_fill_shade(target(d), sh, m, a); }
-static void s_fill_image(fz_device *d, fz_image *im, const fz_matrix *m, float a) { fz_fill_image(target(d), im, m, a); }
-static void s_fill_image_mask(fz_device *d, fz_image *im, const fz_matrix *m, fz_colorspace *cs, float *c, float a) { fz_fill_image_mask(target(d), im, m, cs, c, a); }
-static void s_clip_image_mask(fz_device *d, fz_image *im, const fz_rect *r, const fz_matrix *m) { fz_clip_image_mask(target(d), im, r, m); }
+static void s_fill_image(fz_device *d, fz_image *im, const fz_matrix *m, float a) { pp_budget_image(im); fz_fill_image(target(d), im, m, a); }
+static void s_fill_image_mask(fz_device *d, fz_image *im, const fz_matrix *m, fz_colorspace *cs, float *c, float a) { pp_budget_image(im); fz_fill_image_mask(target(d), im, m, cs, c, a); }
+static void s_clip_image_mask(fz_device *d, fz_image *im, const fz_rect *r, const fz_matrix *m) { pp_budget_image(im); fz_clip_image_mask(target(d), im, r, m); }
 static void s_pop_clip(fz_device *d) { fz_pop_clip(target(d)); }
 static void s_begin_mask(fz_device *d, const fz_rect *r, int lum, fz_colorspace *cs, float *bc) { fz_begin_mask(target(d), r, lum, cs, bc); }
 static void s_end_mask(fz_device *d) { fz_end_mask(target(d)); }
@@ -266,6 +301,7 @@ pp_doc *pp_open(const char *path, const char *password, unsigned int store, int 
 		return NULL;
 	}
 	fz_set_aa_level(d->ctx, 8);
+	pp_image_budget = store > 512 * 1024 ? store : 512 * 1024;
 	fz_try(d->ctx)
 	{
 		d->doc = pdf_open_document(d->ctx, path);
@@ -521,6 +557,8 @@ int pp_render(pp_doc *d, int n, float scale, int depth, int band,
 	if (n < 0 || n >= d->pages || scale <= 0 || band <= 0)
 		return PP_E_ARGS;
 	d->heap.failed = 0;
+	if (cookie)
+		cookie->errors = 0;
 	fz_try(ctx)
 	{
 		pp_cached *c = get_page(d, n);
@@ -595,6 +633,13 @@ int pp_render(pp_doc *d, int n, float scale, int depth, int band,
 			st->out_ms += pp_ms() - q0;
 		}
 		st->draw_ms = pp_ms() - t0;
+		/* (fz_run_display_list swallows a failed item, a picture without
+		   memory say: the page is all there but for it) */
+		if (cookie && cookie->errors)
+		{
+			copy_msg(msg, msglen, d->heap.failed ? "not enough memory for all of the page" : "part of the page could not be drawn");
+			r = d->heap.failed ? PP_E_MEMORY : PP_E_PAGE;
+		}
 	}
 	fz_always(ctx)
 	{
