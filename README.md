@@ -1,6 +1,6 @@
 # PsiPDF
 
-PDF files on the **Psion netBook** and the **Psion Series 5mx** (EPOC Release 5), drawn by [MuPDF](https://mupdf.com/). Version 0.03 (not released yet; the download is 0.01).
+PDF files on the **Psion netBook** and the **Psion Series 5mx** (EPOC Release 5), drawn by [MuPDF](https://mupdf.com/). Version 0.04 (not released yet; the download is 0.01).
 
 PsiPDF opens a PDF from the System screen, from PsiHub or with File > Open, and shows its first page (or the page you left it at) fitted to the width of the screen. It draws real PDF files: embedded fonts, the 14 standard fonts, colour, lines and fills, and JPEG photos. On the netBook pages show in EPOC's 256 colours, error-diffused; on the 5mx in 16 greys.
 
@@ -57,7 +57,7 @@ Screenshots from the netBook and Series 5mx emulators, of PsiPDF's own test file
 
 ## Installing
 
-Install `PsiPDF.sis` on the card (D:): copy it to the Psion and tap it on the System screen. It is about 1.7 MB: the program, its engine (1.5 MB), the recogniser (so that PDF files open in PsiPDF), and the EPOC C library the engine needs (the 5mx's ROM does not have it). One package serves both machines.
+Install `PsiPDF.sis` on the card (D:): copy it to the Psion and tap it on the System screen. It is about 1.7 MB: the program, its engine (1.1 MB), the font file (`PsiPDF.fnt`, 0.3 MB: the 14 standard PDF fonts), the recogniser (so that PDF files open in PsiPDF), and the EPOC C library the engine needs (the 5mx's ROM does not have it). One package serves both machines.
 
 ## How it works
 
@@ -75,6 +75,9 @@ Memory. The netBook has about 16 MB free once it has started, for every program,
 - The biggest page bitmap: a quarter of the free memory, from 1 MB up to 6 MB. With less memory, 150% and 200% are drawn a little smaller than they say.
 - Only one page is decoded at a time: the pictures of the page drawn before are dropped from the store before the next is drawn (a 4-page photo document: its peak in MuPDF was 7.8 MB, now 5.7 MB on the PC).
 - The engine gives back its heap after each page (EPOC's heap does not shrink by itself), stops after five minutes behind (above), and is ended for certain when PsiPDF closes.
+- The 14 standard PDF fonts are not in the engine's code (a program on the card is in memory whole while it runs) but in `PsiPDF.fnt` beside it, in `\System\Apps\PsiPDF\` on the disk PsiPDF is installed on. The engine (`engine/ppfont.c`) reads one font when a PDF asks for it (16 to 30 KB each), shares it between every use in the file, and frees it when MuPDF lets the font go or the file closes. A PDF with its fonts embedded reads none. Helvetica alone (16 KB) stays in the engine: if the font file is missing or damaged the file still opens, text in the standard fonts shows in Helvetica, and PsiPDF says so once ("PsiPDF's font file not found"). The font file is checked as it is read (its length, each font's place and checksum).
+- MuPDF's Unicode tables (ucdn, 102 KB) are left out: the one thing used from them, a character's direction class for Find, is a 6 KB table made from them at build time (`tools/mkbidi.c`, `engine/mu/ppbidi.c`), checked against ucdn for every character (`make TARGET=host bidicheck`).
+- Short of memory, the program that watches the free memory (psion-core's `ssh/psimem.h`) may ask: "trim" drops the page drawn ahead, the decoded pictures and glyphs kept, and the other pages' display lists; "sleep", behind another program with a file open, stops the engine at once, as after five minutes.
 
 The colours: error diffusion (Floyd-Steinberg, serpentine) to the nearest of EPOC's 256 colours (weighted for the eye, from a 32 x 32 x 32 table made at build time by `tools/mkpal.py`), or to 16 greys on the 5mx. The paper and full black come out exactly and the error arriving there is dropped, so the margins and the space between lines stay plain; the palette's 16 greys are exact steps, so text and its anti-aliased edges stay crisp.
 
@@ -106,7 +109,7 @@ core/tools/docker/psibuild "bash build.sh sis"   # dist/PsiPDF.sis
 
 MuPDF's source is never in this repository: `fetch.sh` downloads the official release (`mupdf-1.3-source.tar.gz` from mupdf.com) and checks its SHA-256 before use. PsiPDF does not change MuPDF's files; it builds the ones it needs (the `Makefile` lists those left out) and adds its own in `engine/`.
 
-`make TARGET=host` builds `build/host/pphost`, the same engine on a PC: it draws pages exactly as the Psion does, into PPM pictures in the screen's colours, with the times and memory (run it with no arguments for its options).
+`make TARGET=host` builds `build/host/pphost` (and `build/gen/PsiPDF.fnt`), the same engine on a PC: it draws pages exactly as the Psion does, into PPM pictures in the screen's colours, with the times and memory (run it with no arguments for its options).
 
 ## Testing
 

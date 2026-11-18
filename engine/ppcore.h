@@ -99,6 +99,24 @@ int pp_render(pp_doc *d, int n, float scale, int depth, int band,
    the count, or PP_E_*. */
 int pp_find(pp_doc *d, int n, const char *needle, float *hits, int max, pp_cookie *cookie);
 
+/* The 14 standard PDF fonts are in a file beside the program, read when a
+   PDF needs one (ppfont.c): where the file is (before pp_open; NULL: there
+   is none), and whether it could not be used since then: 0, or PP_FONT_*
+   (Helvetica, kept in the program, was used instead). */
+enum
+{
+	PP_FONT_MISSING = 1,    /* the font file is not there */
+	PP_FONT_DAMAGED = 2,    /* it is not PsiPDF's font file, or is damaged */
+	PP_FONT_MEMORY = 3      /* (inside ppfont.c only: never returned) */
+};
+void pp_font_file(const char *path);
+int pp_font_trouble(void);
+
+/* Memory is short: what can be made again is given back (the decoded
+   pictures and glyphs kept, the display lists of the pages not drawn last,
+   standard fonts no longer used). The next page costs its time again. */
+void pp_trim(pp_doc *d);
+
 /* what MuPDF holds now (bytes), and its peak */
 unsigned long pp_heap_now(pp_doc *d);
 unsigned long pp_heap_peak(pp_doc *d);

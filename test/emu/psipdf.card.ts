@@ -13,6 +13,7 @@ export const cards = {
 		c.w('SYSTEM/APPS/PSIPDF/PSIPDF.AIF', c.f(b + 'pkg/psipdf.aif'));
 		c.w('SYSTEM/APPS/PSIPDF/PSIPDF.MBM', c.f(b + 'pkg/psipdf.mbm'));
 		c.w('SYSTEM/APPS/PSIPDF/PSIPDF.EXE', c.f(b + 'epoc/psipdf.exe'));
+		c.w('SYSTEM/APPS/PSIPDF/PSIPDF.FNT', c.f(b + 'gen/PsiPDF.fnt'));
 		c.w('SYSTEM/RECOGS/PSIPDF.MDL', c.f(b + 'rec/psipdf.mdl'));
 		const d = b + 'pdfs/';
 		if (existsSync(d))

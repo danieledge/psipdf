@@ -59,9 +59,10 @@
 #include "psipdf.h"
 #include <psipdf.rsg>
 #include "psipdf.hrh"
+#include "psimem.h"                  // core/ssh: short of memory, what the programs say to each other
 
 const TUid KUidPsiPdf = { 0x01000AD8 };
-_LIT(KPpVersion, "0.03");
+_LIT(KPpVersion, "0.04");
 _LIT(KPpIni, "C:\\System\\Apps\\PsiPDF\\PsiPDF.ini");
 _LIT(KPpLog, "C:\\System\\Apps\\PsiPDF\\PsiPDF.log");
 _LIT(KPpLogOld, "C:\\System\\Apps\\PsiPDF\\PsiPDF.old");
@@ -245,13 +246,16 @@ private:
 	void Remember();
 	void Log(const TDesC& aText);
 	void HandleForegroundEventL(TBool aForeground);
+	void ProcessMessageL(TUid aUid, const TDesC8& aParams);
+	void Trim();
+	void TellShort();
 	// a page that cannot be shown: said in the dialog and on the page itself
 	void CannotShow(const TDesC& aWhat, const TDesC& aWhy);
 	void Watchdog();
 	void EnginePriority();
 	TInt FreeRamKb() const;
 	static TInt IdleStopCallback(TAny* aSelf);
-	void IdleStop();
+	void IdleStop(TBool aAsked = EFalse);
 private:
 	CPpView* iView;
 	// the engine
@@ -269,6 +273,8 @@ private:
 	CPeriodic* iSoon;            // a page or zoom drawn a moment after the key (quick presses make one)
 	CPeriodic* iIdleStopper;     // the engine stopped after KPpIdleStop behind
 	TBool iAsleep;               // the engine stopped behind: the file is opened again in front
+	TBool iFontTold;             // the font file missing or damaged: said once
+	TInt iTrimFree;              // free RAM (KB) as a trim was asked of the engine
 	TBool iReopen;               // the file to be opened again (the engine started afresh)
 	TBool iReopening;            // ...and its open sent
 	TInt iStoreKb;               // MuPDF's store for this file
@@ -860,6 +866,8 @@ void CPpAppUi::CannotShow(const TDesC& aWhat, const TDesC& aWhy)
 	l.Format(_L("shown: %S - %S"), &iNote, &iNoteWhy);
 	Log(l);
 	iView->DrawNow();
+	if (aWhat.Find(_L("Not enough memory")) == 0)
+		TellShort();
 	TRAPD(err, iEikonEnv->InfoWinL(iNote, iNoteWhy));
 	}
 
@@ -1093,6 +1101,16 @@ void CPpAppUi::JobDoneL(TInt aCmd)
 			else if (pic->iFailed)
 				Problem(result == PP_E_MEMORY ? _L("Not enough memory to show all of this page") : _L("Cannot draw all of this page"), result);
 			iView->DrawNow();
+			// the 14 standard fonts' file could not be used (the engine drew
+			// their text in the one font it keeps): said once
+			if (s->font_trouble && !iFontTold)
+				{
+				iFontTold = ETrue;
+				TBool missing = s->font_trouble == PP_FONT_MISSING;
+				Log(missing ? _L("fonts: PsiPDF.fnt not found") : _L("fonts: PsiPDF.fnt damaged"));
+				TPtrC what(missing ? _L("PsiPDF's font file not found") : _L("PsiPDF's font file is damaged"));
+				TRAPD(err2, iEikonEnv->InfoWinL(what, _L("Some text shows in another typeface - install PsiPDF again")));
+				}
 			}
 		break;
 		}
@@ -1119,6 +1137,10 @@ void CPpAppUi::JobDoneL(TInt aCmd)
 		if (iHitPage != iPage)
 			GoToPageL(iHitPage);
 		ShowHit();
+		break;
+	case PP_CMD_TRIM:
+		l.Format(_L("trim: free RAM %d -> %d KB, heap %d KB"), iTrimFree, FreeRamKb(), s->heap_kb);
+		Log(l);
 		break;
 	default:
 		break;
@@ -2174,6 +2196,8 @@ void CPpAppUi::Problem(const TDesC& aWhat, TInt aResult)
 	case PP_E_MEMORY: why.Set(_L("Not enough memory - close other programs")); break;
 	default: why.Set(_L("Part of it uses a feature PsiPDF does not have")); break;
 		}
+	if (aResult == PP_E_MEMORY)
+		TellShort();
 	TRAPD(err, iEikonEnv->InfoWinL(aWhat, why));
 	}
 
@@ -2308,7 +2332,7 @@ TInt CPpAppUi::IdleStopCallback(TAny* aSelf)
 // code, MuPDF's heap and the page drawn ahead given back). The page on the
 // screen stays, with its page, zoom and Find's hits; coming back opens the
 // file again (HandleForegroundEventL, then PumpL).
-void CPpAppUi::IdleStop()
+void CPpAppUi::IdleStop(TBool aAsked)
 	{
 	if (iForeground || !iRunning || !iOpen || iOpenPending || iReopening)
 		return;
@@ -2322,9 +2346,64 @@ void CPpAppUi::IdleStop()
 		DropPic(iShown);             // (half a page: drawn again when back)
 	iAsleep = ETrue;
 	iReopen = iReopening = EFalse;
+	iIdleStopper->Cancel();
 	TBuf<100> l;
-	l.Format(_L("engine: stopped after %d min behind, free RAM %d -> %d KB"), KPpIdleStop / 60000000, before, FreeRamKb());
+	if (aAsked)
+		l.Format(_L("engine: stopped behind (memory is short), free RAM %d -> %d KB"), before, FreeRamKb());
+	else
+		l.Format(_L("engine: stopped after %d min behind, free RAM %d -> %d KB"), KPpIdleStop / 60000000, before, FreeRamKb());
 	Log(l);
+	}
+
+// Short of memory (core/ssh/psimem.h): the program that watches the free
+// memory asks. "trim": what can be made again is given back. "sleep": behind
+// another program with a file open, the engine is stopped now, as after
+// KPpIdleStop behind (never in front: there it is a trim).
+void CPpAppUi::ProcessMessageL(TUid aUid, const TDesC8& aParams)
+	{
+	if (aUid.iUid != KPsiMemMsgUid)
+		{
+		CEikAppUi::ProcessMessageL(aUid, aParams);
+		return;
+		}
+	if (aParams == KPsiMemSleep && !iForeground && iRunning && iOpen && !iOpenPending && !iReopening)
+		IdleStop(ETrue);
+	else if (aParams == KPsiMemSleep || aParams == KPsiMemTrim)
+		Trim();
+	}
+
+// The page drawn ahead goes (a page turn draws it again); the engine drops
+// the decoded pictures and glyphs it keeps and the other pages' display
+// lists, and gives back its heap's free end; so does the program.
+void CPpAppUi::Trim()
+	{
+	iTrimFree = FreeRamKb();
+	if (iRunning && iJob == PP_CMD_RENDER && iJobPic == &iAhead && !AheadIsWanted())
+		{
+		if (!iStopping)
+			{
+			iS->cookie.abort = 1;            // (its half page is dropped as it ends)
+			iStopping = ETrue;
+			}
+		}
+	else if (iAhead.iBmp && iJobPic != &iAhead && !AheadIsWanted())
+		DropPic(iAhead);
+	if (iRunning && iReady && !iJob && iOpen && !iOpenPending && !iReopen && !iReopening)
+		Send(PP_CMD_TRIM);
+	else
+		{
+		TBuf<60> l;
+		l.Format(_L("trim: free RAM %d -> %d KB"), iTrimFree, FreeRamKb());
+		Log(l);
+		}
+	User::Heap().Compress();
+	}
+
+// PsiPDF has had to say "Not enough memory": the program that watches the
+// free memory (if there is one) may offer its Free memory dialog
+void CPpAppUi::TellShort()
+	{
+	PsiMemTell(iCoeEnv->WsSession(), KPsiMemShort);
 	}
 
 void CPpAppUi::Log(const TDesC& aText)

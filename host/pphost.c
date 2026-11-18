@@ -3,12 +3,14 @@
  * PPM pictures in the screen's colours, with the times and heap.
  *
  *   pphost [-w WIDTH | -s SCALE] [-d 8|4] [-b BAND] [-p FIRST[-LAST]]
- *          [-f TEXT] [-P PASSWORD] [-S KB] OUTPREFIX FILE.pdf
+ *          [-f TEXT] [-P PASSWORD] [-S KB] [-F FONTFILE] OUTPREFIX FILE.pdf
  *
  * -w: fitted to WIDTH pixels (standard 640, the screen); -s: pixels a point;
  * -d 8: EPOC's 256 colours (the netBook), 4: 16 greys (the Series 5mx);
  * -f: find TEXT on each page and print the hits instead; -S: MuPDF's store
- * in KB (standard 1024).
+ * in KB (standard 1024); -F: the font file (standard: PsiPDF.fnt in
+ * ../gen from this program, as the Makefile leaves it; "" for none).
+ * A font file that could not be used is said ("fonts: missing").
  *
  * Copyright (C) 2026 Dan Edge. AGPL-3.0-or-later: see LICENSE. */
 #include <stdio.h>
@@ -60,7 +62,8 @@ int main(int argc, char **argv)
 {
 	int width = 640, depth = 8, band = 64, first = 0, last = -1, i, err, store = 1024;
 	float scale = 0;
-	const char *find = NULL, *pw = NULL;
+	const char *find = NULL, *pw = NULL, *fonts = NULL;
+	char fontpath[600];
 	char msg[200];
 	pp_doc *d;
 	for (i = 1; i + 2 < argc && argv[i][0] == '-'; i += 2)
@@ -76,6 +79,7 @@ int main(int argc, char **argv)
 		case 'f': find = v; break;
 		case 'P': pw = v; break;
 		case 'S': store = atoi(v); break;
+		case 'F': fonts = v; break;
 		default: fprintf(stderr, "unknown option %s\n", argv[i]); return 2;
 		}
 	}
@@ -84,6 +88,13 @@ int main(int argc, char **argv)
 		fprintf(stderr, "usage: pphost [-w W | -s S] [-d 8|4] [-b BAND] [-p A[-B]] [-f TEXT] [-P PW] OUTPREFIX FILE.pdf\n");
 		return 2;
 	}
+	if (!fonts)
+	{
+		const char *sl = strrchr(argv[0], '/');
+		snprintf(fontpath, sizeof fontpath, "%.*s../gen/PsiPDF.fnt", sl ? (int)(sl - argv[0] + 1) : 0, argv[0]);
+		fonts = fontpath;
+	}
+	pp_font_file(fonts);
 	{
 		long t = pp_ms();
 		d = pp_open(argv[i + 1], NULL, store * 1024u, &err, msg, sizeof msg);
@@ -152,6 +163,8 @@ int main(int argc, char **argv)
 				st.heap_now / 1024, st.heap_peak / 1024);
 		}
 	}
+	if (pp_font_trouble())
+		printf("fonts: %s\n", pp_font_trouble() == PP_FONT_MISSING ? "missing" : "damaged");
 	pp_close(d);
 	return 0;
 }

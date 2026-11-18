@@ -1,38 +1,49 @@
 #!/usr/bin/env python3
 # Copyright (C) 2026 Dan Edge. AGPL-3.0-or-later: see LICENSE.
-"""Writes MuPDF's gen_font_base14.h (what its own scripts/fontdump.c makes)
-from the base 14 .cff files: one const array per font, so they stay in the
-program's code (read-only, nothing writable).
+"""Makes PsiPDF's font file from MuPDF's base 14 .cff files, and the one
+font that stays in the program.
 
-  fontdump.py OUT.h FONTDIR [--slim]
+  fontdump.py OUT.fonts OUT.h FONTDIR
 
---slim: only the three regular faces (Helvetica, Times, Courier) and Symbol
-and Dingbats; the bold and italic names point at the regular face (to
-measure what the 9 others cost)."""
-import os, sys
+OUT.fonts (installed as \\System\\Apps\\PsiPDF\\PsiPDF.fnt, read by
+engine/ppfont.c one font at a time, when a PDF needs it). All numbers
+little-endian, 32 bits:
 
-out, fontdir = sys.argv[1], sys.argv[2]
-slim = '--slim' in sys.argv
-NAMES = ['Dingbats', 'NimbusMonL-Bold', 'NimbusMonL-BoldObli', 'NimbusMonL-Regu', 'NimbusMonL-ReguObli',
-         'NimbusRomNo9L-Medi', 'NimbusRomNo9L-MediItal', 'NimbusRomNo9L-Regu', 'NimbusRomNo9L-ReguItal',
-         'NimbusSanL-Bold', 'NimbusSanL-BoldItal', 'NimbusSanL-Regu', 'NimbusSanL-ReguItal', 'StandardSymL']
-KEEP = {'Dingbats', 'NimbusMonL-Regu', 'NimbusRomNo9L-Regu', 'NimbusSanL-Regu', 'StandardSymL'}
-total = 0
-with open(out, 'w') as f:
-    f.write('/* made by tools/fontdump.py */\n')
-    for n in NAMES:
-        c = 'pdf_font_' + n.replace('-', '_')
-        if slim and n not in KEEP:
-            continue
-        data = open(os.path.join(fontdir, n + '.cff'), 'rb').read()
-        total += len(data)
-        f.write('static const unsigned char %s[%d] = {\n' % (c, len(data)))
-        for i in range(0, len(data), 24):
-            f.write(','.join(str(b) for b in data[i:i + 24]) + ',\n')
-        f.write('};\n')
-    if slim:
-        for n in NAMES:
-            if n not in KEEP:
-                fam = n.split('-')[0]
-                f.write('#define pdf_font_%s pdf_font_%s_Regu\n' % (n.replace('-', '_'), fam))
-print('%s: %d bytes of fonts%s' % (out, total, ' (slim)' if slim else ''))
+  0   'PPFN'
+  4   1 (the format)
+  8   14 (the fonts, in the order of ppfont.c's names: Courier, Courier-Bold,
+      Courier-Oblique, Courier-BoldOblique, Helvetica..., Times-Roman...,
+      Symbol, ZapfDingbats)
+  12  the file's length
+  16  14 x (offset, length, Adler-32 of the font)
+  184 the fonts (CFF), each on a 4-byte boundary
+
+OUT.h: Helvetica (Nimbus Sans L, 16 KB) as a const array, which stays in
+the program's code for when the font file is missing or damaged."""
+import os, struct, sys, zlib
+
+out, hdr, fontdir = sys.argv[1], sys.argv[2], sys.argv[3]
+# (the order of pp_font_names in engine/ppfont.c)
+FILES = ['NimbusMonL-Regu', 'NimbusMonL-Bold', 'NimbusMonL-ReguObli', 'NimbusMonL-BoldObli',
+         'NimbusSanL-Regu', 'NimbusSanL-Bold', 'NimbusSanL-ReguItal', 'NimbusSanL-BoldItal',
+         'NimbusRomNo9L-Regu', 'NimbusRomNo9L-Medi', 'NimbusRomNo9L-ReguItal', 'NimbusRomNo9L-MediItal',
+         'StandardSymL', 'Dingbats']
+SPARE = 'NimbusSanL-Regu'
+fonts = [open(os.path.join(fontdir, n + '.cff'), 'rb').read() for n in FILES]
+head = 16 + 12 * len(fonts)
+table, body, at = b'', b'', head
+for d in fonts:
+    table += struct.pack('<III', at, len(d), zlib.adler32(d) & 0xffffffff)
+    d += b'\0' * (-len(d) % 4)
+    body += d
+    at += len(d)
+with open(out, 'wb') as f:
+    f.write(b'PPFN' + struct.pack('<III', 1, len(fonts), at) + table + body)
+data = fonts[FILES.index(SPARE)]
+with open(hdr, 'w') as f:
+    f.write('/* made by tools/fontdump.py: %s, the font kept in the program */\n' % SPARE)
+    f.write('static const unsigned char pp_font_spare[%d] = {\n' % len(data))
+    for i in range(0, len(data), 24):
+        f.write(','.join(str(b) for b in data[i:i + 24]) + ',\n')
+    f.write('};\n')
+print('%s: %d bytes, %d fonts; %s: %d bytes in the program' % (out, at, len(fonts), hdr, len(data)))

@@ -11,10 +11,13 @@ TARGET  ?= host
 O       := build/$(TARGET)
 GEN     := build/gen
 
-# MuPDF's files left out: other document kinds and outputs, forms, saving
+# MuPDF's files left out: other document kinds and outputs, forms, saving;
+# ucdn (its one use here is engine/mu/ppbidi.c) and pdf-fontfile (the 14
+# standard fonts in the program's code: engine/ppfont.c reads them from
+# PsiPDF.fnt instead)
 FITZ_OUT := getopt load-jpx load-png load-tiff filter-jbig2 output-pcl output-pwg svg-device \
-	trace-device stext-output stext-paragraph document
-PDF_OUT  := pdf-write pdf-form pdf-field pdf-appearance pdf-event pdf-device pdf-pkcs7
+	trace-device stext-output stext-paragraph document ucdn
+PDF_OUT  := pdf-write pdf-form pdf-field pdf-appearance pdf-event pdf-device pdf-pkcs7 pdf-fontfile
 FITZ_SRC := $(filter-out $(addprefix $(MU)/source/fitz/,$(FITZ_OUT:=.c)),$(wildcard $(MU)/source/fitz/*.c))
 PDF_SRC  := $(filter-out $(addprefix $(MU)/source/pdf/,$(PDF_OUT:=.c)),$(wildcard $(MU)/source/pdf/*.c)) \
 	$(MU)/source/pdf/js/pdf-js-none.c
@@ -55,16 +58,23 @@ CXXFLAGS := $(ARCH) $(DEFS) -Wno-ctor-dtor-privacy -fcheck-new -fvtable-thunks -
 endif
 
 objs = $(addprefix $(O)/$(1)/,$(notdir $(2:.c=.o)))
-MU_OBJS := $(call objs,fitz,$(FITZ_SRC)) $(call objs,pdf,$(PDF_SRC)) $(O)/mu/ppstubs.o \
+MU_OBJS := $(call objs,fitz,$(FITZ_SRC)) $(call objs,pdf,$(PDF_SRC)) $(O)/mu/ppstubs.o $(O)/mu/ppbidi.o \
 	$(addprefix $(O)/ft/,$(notdir $(FT_SRC:=.o))) $(addprefix $(O)/jpeg/,$(JPEG_SRC:=.o)) \
 	$(addprefix $(O)/z/,$(Z_SRC:=.o))
-PP_OBJS := $(O)/pp/ppcore.o $(O)/pp/ppquant.o
+PP_OBJS := $(O)/pp/ppcore.o $(O)/pp/ppquant.o $(O)/pp/ppfont.o
 
-all: $(if $(filter host,$(TARGET)),$(O)/pphost,$(O)/psipdf.exe)
+all: $(if $(filter host,$(TARGET)),$(O)/pphost,$(O)/psipdf.exe) $(GEN)/PsiPDF.fnt
 
-$(GEN)/gen_font_base14.h: tools/fontdump.py
+# the font file (installed beside the program) and the one font kept in it
+$(GEN)/PsiPDF.fnt $(GEN)/gen_font_spare.h: tools/fontdump.py
 	@mkdir -p $(GEN)
-	python3 tools/fontdump.py $@ $(MU)/resources/fonts
+	python3 tools/fontdump.py $(GEN)/PsiPDF.fnt $(GEN)/gen_font_spare.h $(MU)/resources/fonts
+# the bidirectional classes as runs, from ucdn's own tables (made on the PC)
+HOSTCC  ?= gcc
+$(GEN)/ppbidi.h: tools/mkbidi.c
+	@mkdir -p $(GEN)
+	$(HOSTCC) -O1 -w -I$(MU)/source/fitz -o $(GEN)/mkbidi tools/mkbidi.c
+	$(GEN)/mkbidi > $@
 $(GEN)/pppal.h: tools/mkpal.py
 	@mkdir -p $(GEN)
 	python3 tools/mkpal.py $@
@@ -72,7 +82,9 @@ $(GEN)/pppal.h: tools/mkpal.py
 $(O)/fitz/%.o: $(MU)/source/fitz/%.c
 	@mkdir -p $(dir $@)
 	$(CC) -c $(CFLAGS) $(MUDEFS) $< -o $@
-$(O)/pdf/pdf-fontfile.o: $(GEN)/gen_font_base14.h
+# (pdf-font.c makes its fonts through ppfont.c, which counts the users of
+# each font read from the font file)
+$(O)/pdf/pdf-font.o: CFLAGS += -Dfz_new_font_from_memory=pp_new_font_from_memory
 $(O)/pdf/%.o: $(MU)/source/pdf/%.c
 	@mkdir -p $(dir $@)
 	$(CC) -c $(CFLAGS) $(MUDEFS) $< -o $@
@@ -83,6 +95,9 @@ $(O)/mu/%.o: engine/mu/%.c
 	@mkdir -p $(dir $@)
 	$(CC) -c $(CFLAGS) $(MUDEFS) -Iengine/mu $< -o $@
 $(O)/pp/ppquant.o: $(GEN)/pppal.h
+$(O)/pp/ppfont.o: $(GEN)/gen_font_spare.h engine/ppfont.h
+$(O)/pp/ppcore.o: engine/ppfont.h
+$(O)/mu/ppbidi.o: $(GEN)/ppbidi.h
 $(O)/pp/%.o: engine/%.c engine/ppcore.h
 	@mkdir -p $(dir $@)
 	$(CC) -c $(CFLAGS) $(MUDEFS) $< -o $@
@@ -102,6 +117,10 @@ $(O)/z/%.o: $(CORE)/ssh/zlib/%.c
 ifeq ($(TARGET),host)
 $(O)/pphost: $(MU_OBJS) $(PP_OBJS) host/pphost.c
 	$(CC) $(CFLAGS) -Iengine -o $@ host/pphost.c $(PP_OBJS) $(MU_OBJS) -lm
+# ppbidi.c against ucdn, every character
+bidicheck: $(GEN)/ppbidi.h
+	$(CC) $(CFLAGS) -I$(GEN) -I$(MU)/source/fitz -o $(O)/bidicheck host/bidicheck.c engine/mu/ppbidi.c
+	$(O)/bidicheck
 else
 V4BX_DIR := $(O)
 include $(CORE)/tools/v4bx.mk
@@ -125,4 +144,4 @@ $(O)/psipdf.exe: $(MU_OBJS) $(PP_OBJS) $(EPOC_OBJS) $(LIBGCC)
 	@ls -la $@
 endif
 
-.PHONY: all
+.PHONY: all bidicheck

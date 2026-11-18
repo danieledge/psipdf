@@ -4,6 +4,8 @@
 #include "mupdf/fitz.h"
 #include "mupdf/pdf.h"
 #include "ppcore.h"
+#include "ppfont.h"
+#include "ppfont.h"
 
 /* pages kept loaded, each with its display list: the one shown, the next
    (drawn ahead) and the one before */
@@ -391,6 +393,7 @@ pp_doc *pp_open(const char *path, const char *password, unsigned int store, int 
 		*err = d->heap.failed ? PP_E_MEMORY : (m && strstr(m, "cannot open")) ? PP_E_OPEN : PP_E_DAMAGED;
 		copy_msg(msg, msglen, m);
 		fz_free_context(d->ctx);
+		pp_font_reset();
 		pp_sys_free(d);
 		return NULL;
 	}
@@ -407,6 +410,7 @@ pp_doc *pp_open(const char *path, const char *password, unsigned int store, int 
 	{
 		pdf_close_document(d->doc);
 		fz_free_context(d->ctx);
+		pp_font_reset();
 		pp_sys_free(d);
 		return NULL;
 	}
@@ -471,7 +475,21 @@ void pp_close(pp_doc *d)
 		drop_cached(d, &d->cache[i]);
 	pdf_close_document(d->doc);
 	fz_free_context(d->ctx);
+	pp_font_reset();          /* (the standard fonts read for this file) */
 	pp_sys_free(d);
+}
+
+void pp_trim(pp_doc *d)
+{
+	int i;
+	if (!d || d->locked)
+		return;
+	for (i = 0; i < PP_CACHE; i++)
+		if (d->cache[i].n != d->drawn)
+			drop_cached(d, &d->cache[i]);
+	drop_pictures(d->ctx);
+	fz_purge_glyph_cache(d->ctx);
+	pp_font_sweep();
 }
 
 int pp_pages(pp_doc *d)
@@ -502,8 +520,9 @@ void pp_title(pp_doc *d, char *buf, int len)
 	}
 }
 
-unsigned long pp_heap_now(pp_doc *d) { return d->heap.now; }
-unsigned long pp_heap_peak(pp_doc *d) { return d->heap.peak; }
+/* (with the standard fonts read from the font file, which are not MuPDF's) */
+unsigned long pp_heap_now(pp_doc *d) { return d->heap.now + pp_font_bytes(); }
+unsigned long pp_heap_peak(pp_doc *d) { return d->heap.peak + pp_font_bytes(); }
 
 /* page n loaded (from the cache, or into its least-recently-used slot) */
 static pp_cached *get_page(pp_doc *d, int n)
@@ -745,8 +764,10 @@ int pp_render(pp_doc *d, int n, float scale, int depth, int band,
 		else
 			r = caught(d, PP_E_PAGE, msg, msglen);
 	}
-	st->heap_now = d->heap.now;
-	st->heap_peak = d->heap.peak;
+	/* (standard fonts the store has let go while drawing) */
+	pp_font_sweep();
+	st->heap_now = pp_heap_now(d);
+	st->heap_peak = pp_heap_peak(d);
 	return r;
 }
 
@@ -795,5 +816,6 @@ int pp_find(pp_doc *d, int n, const char *needle, float *hits, int max, pp_cooki
 	{
 		count = cookie && cookie->abort ? PP_E_STOPPED : caught(d, PP_E_PAGE, NULL, 0);
 	}
+	pp_font_sweep();
 	return count;
 }

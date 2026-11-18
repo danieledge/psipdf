@@ -16,6 +16,10 @@
 #include "psipdf.h"
 
 extern "C" {
+#include "ppfont.h"
+}
+
+extern "C" {
 long pp_ms(void)
 	{
 	TUint t = User::TickCount();                 // 1/64 s
@@ -237,10 +241,16 @@ static void Do(TPpEngine& e)
 		e.iDoc = NULL;
 		s->result = PP_OK;
 		break;
+	case PP_CMD_TRIM:
+		if (e.iDoc)
+			pp_trim(e.iDoc);
+		s->result = PP_OK;
+		break;
 	default:
 		s->result = PP_E_ARGS;
 		break;
 		}
+	s->font_trouble = pp_font_trouble();
 	// what a page needed while it was drawn (a picture decoded, the band's
 	// pixmap) given back to the system: EPOC's heap never shrinks by itself,
 	// and the engine stayed at its peak for as long as the file was open
@@ -254,8 +264,39 @@ static void Do(TPpEngine& e)
 	Copy(s->mu_msg, sizeof(s->mu_msg), pp_messages());
 	}
 
+// The font file (the 14 standard PDF fonts, read when a PDF needs one:
+// ppfont.c): beside this program, wherever it is installed; else in
+// PsiPDF's folder on any disk (the engine put on another disk than the
+// rest). Not there: text in those fonts shows in Helvetica, and PsiPDF says.
+static void FindFontFile()
+	{
+	_LIT(KFonts, "PsiPDF.fnt");
+	TFileName me = RProcess().FileName();
+	TParse p;
+	TFileName file;
+	RFs fs;
+	if (fs.Connect() != KErrNone)
+		return;
+	TEntry entry;
+	if (p.Set(KFonts, &me, NULL) == KErrNone && fs.Entry(p.FullName(), entry) == KErrNone)
+		file = p.FullName();
+	else
+		{
+		TFindFile find(fs);
+		if (find.FindByDir(_L("\\System\\Apps\\PsiPDF\\PsiPDF.fnt"), KNullDesC) == KErrNone)
+			file = find.File();
+		}
+	fs.Close();
+	char path[260];
+	TInt n = Min(file.Length(), (TInt)sizeof(path) - 1);
+	Mem::Copy(path, file.Ptr(), n);          // (a narrow build: one byte a character)
+	path[n] = 0;
+	pp_font_file(path);
+	}
+
 static TInt RunL()
 	{
+	FindFontFile();
 	TCommand name = RProcess().CommandLine();
 	name.Trim();
 	RChunk chunk;

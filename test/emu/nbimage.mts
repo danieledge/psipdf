@@ -32,6 +32,8 @@ addFile(rom, 'Z:\\System\\Apps\\PsiPDF\\PsiPDF.rsc', readFileSync(`${b}/app/psip
 addFile(rom, 'Z:\\System\\Apps\\PsiPDF\\PsiPDF.aif', readFileSync(`${b}/pkg/psipdf.aif`));
 addFile(rom, 'Z:\\System\\Apps\\PsiPDF\\PsiPDF.mbm', readFileSync(`${b}/pkg/psipdf.mbm`));
 addFile(rom, 'Z:\\System\\Recogs\\PsiPDF.mdl', readFileSync(`${b}/rec/psipdf.mdl`), 'xip');
+// the font file: in the ROM, where the engine (on C:) finds it in PsiPDF's folder
+addFile(rom, 'Z:\\System\\Apps\\PsiPDF\\PsiPDF.fnt', readFileSync(`${b}/gen/PsiPDF.fnt`));
 const exe = readFileSync(`${b}/epoc/psipdf.exe`);
 for (let i = 0, o = 0; o < exe.length; i++, o += 65536)
   addFile(rom, `Z:\\System\\Apps\\PsiPDF\\Engine\\psipdf.b${i}`, exe.subarray(o, o + 65536));

@@ -59,8 +59,10 @@ The base 14 fonts (as shipped with MuPDF 1.3, resources/fonts)
     Development, 1997-2003. URW++ released these fonts under the GNU General
     Public License, with a font exception, through Ghostscript (the
     gnu-gs-fonts-std set); MuPDF 1.3 ships them in its source under its own
-    licence (AGPL-3.0) with no separate licence file. They are compiled into
-    psipdf.exe as data, unchanged.
+    licence (AGPL-3.0) with no separate licence file. They are installed
+    unchanged, as CFF, in one file beside the program (PsiPDF.fnt, made by
+    tools/fontdump.py); Nimbus Sans L Regular is also compiled into
+    psipdf.exe as data.
 
 zlib (inflate only), from psion-core (ssh/zlib)
     Copyright (C) 1995-2026 Jean-loup Gailly and Mark Adler.

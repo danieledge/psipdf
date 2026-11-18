@@ -27,7 +27,7 @@
 #include "engine/ppcore.h"      /* pp_cookie, PP_E_*, PP_DEPTH_* */
 
 #define PP_MAGIC        0x46445050u     /* 'PPDF' */
-#define PP_PROTOCOL     2
+#define PP_PROTOCOL     3
 #define PP_MAX_HITS     32
 
 enum
@@ -45,6 +45,7 @@ enum
 	PP_CMD_RENDER,          /* page, scale, bitmap, depth: rows_done, times */
 	PP_CMD_FIND,            /* page (the first to look at), text: found_page, hits */
 	PP_CMD_CLOSE,           /* the file closed (the engine stays) */
+	PP_CMD_TRIM,            /* what can be made again given back (memory is short) */
 	PP_CMD_QUIT
 };
 
@@ -86,6 +87,7 @@ typedef struct
 	int out_ms;
 	int heap_kb, heap_peak_kb;      /* MuPDF's memory */
 	char mu_msg[160];               /* MuPDF's last warning (for the log) */
+	volatile int font_trouble;      /* PP_FONT_* once the font file could not be used, else 0 */
 	} PpShared;
 
 #endif

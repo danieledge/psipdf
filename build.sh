@@ -8,6 +8,8 @@
 #
 #   psipdf.exe   the engine: MuPDF 1.3, fetched by ./fetch.sh at a pinned
 #                checksum into third/ (Makefile)
+#   PsiPDF.fnt the 14 standard PDF fonts, read by the engine when a PDF
+#                needs one (build/gen, made with the engine)
 #   PsiPDF.app   the program (app/), with its .rsc
 #   PsiPDF.mdl   the recogniser: PDF files open in PsiPDF (rec/)
 #
@@ -45,6 +47,7 @@ if [ "$1" = sis ]; then
 	mkdir -p "$P"
 	cp "$HERE/pkg/psipdf.pkg" "$HERE/LICENSE" "$HERE/NOTICE" "$P/"
 	cp "$B/epoc/psipdf.exe" "$B/app/psipdf.app" "$B/app/psipdf.rsc" "$B/rec/psipdf.mdl" "$P/"
+	cp "$B/gen/PsiPDF.fnt" "$P/psipdf.fnt"   # the 14 standard PDF fonts (Makefile)
 	[ -f "$P/psipdf.aif" ] && [ -f "$P/psipdf.mbm" ] || { echo "no icons: python3 pkg/mkicon.py build/pkg core"; exit 1; }
 	install -m 644 "$REL/stdlib.sis" "$P/STDLIB.SIS"   # ESTLIB.DLL, which the engine needs
 	(cd "$P" && wine "$EPOCROOT/epoc32/tools/makesis.exe" psipdf.pkg psipdf.sis > "$B/sis.log" 2>&1) || { cat "$B/sis.log"; exit 1; }
@@ -75,7 +78,7 @@ echo "== PsiPDF.app"
 D=$B/app; rm -rf "$D"; mkdir -p "$D"
 # (this SDK's makmake has no SOURCEPATH, and every ptproj project shares one
 # object folder: the sources are copied together under names of their own)
-cp "$HERE"/app/* "$HERE/psipdf.h" "$HERE/engine/ppcore.h" "$CORE/ssh/psibell.h" "$CORE/ssh/psishared.h" "$D/"
+cp "$HERE"/app/* "$HERE/psipdf.h" "$HERE/engine/ppcore.h" "$CORE/ssh/psibell.h" "$CORE/ssh/psishared.h" "$CORE/ssh/psimem.h" "$D/"
 sed -i 's#"engine/ppcore.h"#"ppcore.h"#' "$D/psipdf.h"
 link psipdf "$D"
 mmp psipdf psipdf psipdf.app app
