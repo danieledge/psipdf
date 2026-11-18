@@ -61,7 +61,7 @@
 #include "psipdf.hrh"
 
 const TUid KUidPsiPdf = { 0x01000AD8 };
-_LIT(KPpVersion, "0.02");
+_LIT(KPpVersion, "0.03");
 _LIT(KPpIni, "C:\\System\\Apps\\PsiPDF\\PsiPDF.ini");
 _LIT(KPpLog, "C:\\System\\Apps\\PsiPDF\\PsiPDF.log");
 _LIT(KPpLogOld, "C:\\System\\Apps\\PsiPDF\\PsiPDF.old");
@@ -70,8 +70,25 @@ _LIT(KPpEngine, "psipdf.exe");
 // the zooms, in the order of View > Zoom
 enum { EZoomFitWidth = 0, EZoomFitPage, EZoom100, EZoom150, EZoom200, EZoomCount };
 const TInt KPpRecent = 8;                    // files whose page and zoom are remembered
-const TInt KPpMaxBytes = 6 * 1024 * 1024;    // the biggest page bitmap
-const TInt KPpAheadSpare = 3 * 1024 * 1024;  // free memory left after drawing ahead
+// Memory (the netBook has about 16 MB free after it starts, shared by every
+// program; the 5mx, 8 or 16 MB). What PsiPDF may take is set when a file
+// opens, from the free RAM then:
+// - the biggest page bitmap: a quarter of it, from 1 MB (a page fitted to
+//   the width: 580 KB) up to 6 MB (200% on an A4 page is 4 MB: with less
+//   memory it is drawn a little smaller);
+// - MuPDF's store (decoded pictures, fonts): a quarter of it, from 1 MB up
+//   to 3 MB (2 MB on the 5mx); a picture is decoded no bigger than this.
+const TInt KPpMaxBytes = 6 * 1024 * 1024;
+const TInt KPpMinBytes = 1024 * 1024;
+const TInt KPpStoreMinKb = 1024;
+// the next page is drawn ahead only while it is small (fit width or fit
+// page: up to 1 MB) and this much free memory is left after it
+const TInt KPpAheadMaxBytes = 1024 * 1024;
+const TInt KPpAheadSpare = 3 * 1024 * 1024;
+// PsiPDF behind this long with a file open: its engine (MuPDF, 3 to 8 MB with
+// its code) is stopped, and the file opened again, at the same page and
+// zoom, when PsiPDF comes back; the page on the screen is kept meanwhile
+const TInt KPpIdleStop = 5 * 60 * 1000000;
 // MuPDF draws a page in bands of about this much RGBA: on the netBook 512 KB
 // (200 rows 640 wide, a quarter of a fitted A4 page, where the whole page's
 // pixmap would be 2.3 MB), on the 5mx, with half the memory, 160 KB (64
@@ -233,6 +250,8 @@ private:
 	void Watchdog();
 	void EnginePriority();
 	TInt FreeRamKb() const;
+	static TInt IdleStopCallback(TAny* aSelf);
+	void IdleStop();
 private:
 	CPpView* iView;
 	// the engine
@@ -248,6 +267,12 @@ private:
 	CPpWatcher* iWatcher;
 	CIdle* iIdle;                // the password asked for after an open
 	CPeriodic* iSoon;            // a page or zoom drawn a moment after the key (quick presses make one)
+	CPeriodic* iIdleStopper;     // the engine stopped after KPpIdleStop behind
+	TBool iAsleep;               // the engine stopped behind: the file is opened again in front
+	TBool iReopen;               // the file to be opened again (the engine started afresh)
+	TBool iReopening;            // ...and its open sent
+	TInt iStoreKb;               // MuPDF's store for this file
+	TInt iMaxBytes;              // the biggest page bitmap for this file
 	TInt iJob;                   // the command the engine has, or 0
 	TPpPic* iJobPic;             // PP_CMD_RENDER: the picture it draws into
 	TUint iJobStart;             // (ticks)
@@ -549,6 +574,7 @@ CPpAppUi::~CPpAppUi()
 	StopEngine();
 	delete iIdle;
 	delete iSoon;
+	delete iIdleStopper;
 	delete iTick;
 	delete iWaiter;
 	delete iWatcher;
@@ -580,6 +606,8 @@ void CPpAppUi::ConstructL()
 	iTick = CPeriodic::NewL(CActive::EPriorityStandard);
 	iIdle = CIdle::NewL(CActive::EPriorityStandard);
 	iSoon = CPeriodic::NewL(CActive::EPriorityStandard);
+	iIdleStopper = CPeriodic::NewL(CActive::EPriorityIdle);
+	iMaxBytes = KPpMaxBytes;
 	iWaiter = new(ELeave) CPsiBellWaiter(TCallBack(BellCallback, this));
 	iWatcher = new(ELeave) CPpWatcher(*this);
 	// the last session's log kept as PsiPDF.old
@@ -759,9 +787,21 @@ void CPpAppUi::StopEngine()
 	iRinger.Ring(&iS->eng_bell);
 	for (TInt i = 0; i < 20 && iS->state != PP_STATE_EXITED; i++)
 		User::After(100000);
-	if (iS->state != PP_STATE_EXITED)
+	// (PP_STATE_EXITED is said just before the engine's last steps: it has
+	// a second more to be gone, else it is ended here, never left behind)
+	for (TInt j = 0; j < 10 && iS->state == PP_STATE_EXITED && iProcess.ExitType() == EExitPending; j++)
+		User::After(100000);
+	if (iProcess.ExitType() == EExitPending)
+		{
+		TBuf<60> l;
+		l.Format(_L("engine: did not end (state %d): killed"), iS->state);
+		Log(l);
 		iProcess.Kill(0);
+		}
 	iProcess.Close();
+	// (the bell's handle on the engine's thread kept the ended engine's
+	// process, and so its 1.4 MB of code, in memory until PsiPDF closed)
+	iRinger.Close();
 	iRunning = EFalse;
 	iReady = EFalse;
 	iJob = 0;
@@ -775,6 +815,7 @@ void CPpAppUi::EngineEnded()
 	TExitCategoryName cat = iProcess.ExitCategory();
 	TInt reason = iProcess.ExitReason();
 	iProcess.Close();
+	iRinger.Close();
 	iRunning = EFalse;
 	iReady = EFalse;
 	TInt job = iJob;
@@ -861,6 +902,7 @@ void CPpAppUi::Watchdog()
 	iWatcher->Cancel();
 	iProcess.Kill(KErrTimedOut);
 	iProcess.Close();
+	iRinger.Close();
 	iRunning = EFalse;
 	iReady = EFalse;
 	iJob = 0;
@@ -965,6 +1007,21 @@ void CPpAppUi::JobDoneL(TInt aCmd)
 	switch (aCmd)
 		{
 	case PP_CMD_OPEN:
+		if (iReopening)
+			{
+			iReopening = EFalse;
+			l.Format(_L("open again: %d, %d pages, %d ms, heap %d KB, free RAM %d KB"), result, s->pages, ms, s->heap_kb, FreeRamKb());
+			Log(l);
+			if (result == PP_OK && s->pages == iPages)
+				break;                   // (as it was: the page shown, its zoom, Find's hits)
+			// (the file has changed, or gone: opened as a new file)
+			iOpen = EFalse;
+			DropPic(iShown);
+			DropPic(iAhead);
+			iHitPage = -1;
+			iHits = 0;
+			iView->DrawNow();
+			}
 		BusyEnd();
 		iOpenMs = ms;
 		l.Format(_L("open: %d, %d pages, %d ms, heap %d KB"), result, s->pages, ms, s->heap_kb);
@@ -1138,7 +1195,7 @@ void CPpAppUi::PumpL()
 		return;
 	if (!iRunning)
 		{
-		if (iEngineFailed)
+		if (iEngineFailed || iAsleep)
 			return;
 		TRAPD(err, StartEngineL());
 		if (err != KErrNone)
@@ -1180,6 +1237,22 @@ void CPpAppUi::PumpL()
 		return;
 		}
 	PpShared* s = iS;
+	if (iReopen)
+		{
+		// the engine stopped behind: the file opened again, as it was (the
+		// page on the screen stays meanwhile)
+		iReopen = EFalse;
+		iReopening = ETrue;
+		TPtr8 path((TUint8*)s->path, sizeof(s->path) - 1);
+		path.Copy(iFile.Left(Min(iFile.Length(), (TInt)sizeof(s->path) - 1)));
+		path.ZeroTerminate();
+		ToUtf8(s->text, sizeof(s->text), iPassword);
+		s->store_kb = iStoreKb;
+		Send(PP_CMD_OPEN);
+		return;
+		}
+	if (iReopening)
+		return;
 	if (iOpenPending)
 		{
 		iOpenPending = EFalse;
@@ -1189,8 +1262,16 @@ void CPpAppUi::PumpL()
 		path.ZeroTerminate();
 		ToUtf8(s->text, sizeof(s->text), iPassword);
 		// what MuPDF keeps between bands and pages (decoded pictures, fonts):
-		// enough for a full-page photo, so it is not decoded again for each band
-		s->store_kb = iMode == EColor256 ? 3072 : 2048;
+		// enough for a full-page photo, so it is not decoded again for each
+		// band, but no more than a quarter of the free memory (from 1 MB);
+		// and the biggest page bitmap, the same
+		TInt free = FreeRamKb();
+		iStoreKb = Max(KPpStoreMinKb, Min(iMode == EColor256 ? 3072 : 2048, free / 4));
+		iMaxBytes = Max(KPpMinBytes, Min(KPpMaxBytes, free / 4 * 1024));
+		s->store_kb = iStoreKb;
+		TBuf<100> l;
+		l.Format(_L("memory: free RAM %d KB: store %d KB, pages up to %d KB"), free, iStoreKb, iMaxBytes / 1024);
+		Log(l);
 		Busy(_L("Opening..."));
 		Send(PP_CMD_OPEN);
 		return;
@@ -1226,7 +1307,9 @@ void CPpAppUi::PumpL()
 			TSize old = ShownSize();
 			TBool samePage = iShown.iPage == iPage && iShown.iBmp;
 			DropPic(iShown);
-			if (iAhead.iBmp && (iAhead.iPage != iPage + 1))
+			// (the page ahead goes too unless it is the next page at this zoom:
+			// one bitmap at a time while a new one is drawn)
+			if (iAhead.iBmp && (iAhead.iPage != iPage + 1 || !SizeKnown(iPage + 1) || iAhead.iScale != ScaleFor(iPage + 1, iZoom)))
 				DropPic(iAhead);
 			TInt r = CreatePic(iShown, iPage, scale);
 			if (r == KErrNoMemory && iAhead.iBmp)
@@ -1297,7 +1380,7 @@ void CPpAppUi::PumpL()
 	TInt bytes = iMode == EColor256 ? ns.iWidth * ns.iHeight : (ns.iWidth + 1) / 2 * ns.iHeight;
 	TMemoryInfoV1Buf mem;
 	UserHal::MemoryInfo(mem);
-	if (mem().iFreeRamInBytes < bytes + KPpAheadSpare)
+	if (bytes > KPpAheadMaxBytes || mem().iFreeRamInBytes < bytes + KPpAheadSpare)
 		return;
 	if (CreatePic(iAhead, next, nscale) != KErrNone)
 		return;
@@ -1356,6 +1439,8 @@ void CPpAppUi::CloseDocument()
 	{
 	iOpen = EFalse;
 	iOpenPending = EFalse;
+	iAsleep = iReopen = iReopening = EFalse;
+	iIdleStopper->Cancel();
 	DropPic(iShown);
 	DropPic(iAhead);
 	delete[] iSizes;
@@ -1414,7 +1499,7 @@ void CPpAppUi::AskPasswordL()
 // ----- pages -----------------------------------------------------------------
 
 // pixels a point x 10000 for page aPage at aZoom (its size known), kept
-// within KPpMaxBytes
+// within iMaxBytes (set when the file opened)
 TInt CPpAppUi::ScaleFor(TInt aPage, TInt aZoom) const
 	{
 	TSize view = iView->Size();
@@ -1434,10 +1519,10 @@ TInt CPpAppUi::ScaleFor(TInt aPage, TInt aZoom) const
 	default: s = view.iWidth / w; break;
 		}
 	TReal bytes = w * s * h * s * (iMode == EColor256 ? 1.0 : 0.5);
-	if (bytes > KPpMaxBytes)
+	if (bytes > iMaxBytes)
 		{
 		TReal f;
-		Math::Sqrt(f, KPpMaxBytes / bytes);
+		Math::Sqrt(f, iMaxBytes / bytes);
 		s *= f;
 		}
 	TInt r = (TInt)(s * 10000.0);
@@ -2184,6 +2269,7 @@ void CPpAppUi::HandleForegroundEventL(TBool aForeground)
 	{
 	iForeground = aForeground;
 	EnginePriority();
+	iIdleStopper->Cancel();
 	if (!aForeground)
 		{
 		Remember();
@@ -2194,7 +2280,51 @@ void CPpAppUi::HandleForegroundEventL(TBool aForeground)
 			StopEngine();
 			Log(_L("engine: stopped (no file, PsiPDF behind)"));
 			}
+		// a file: stopped if PsiPDF stays behind (IdleStop)
+		else if (iRunning && iOpen)
+			iIdleStopper->Start(KPpIdleStop, KPpIdleStop, TCallBack(IdleStopCallback, this));
 		}
+	else if (iAsleep)
+		{
+		// back: the file opened again where it was
+		iAsleep = EFalse;
+		iReopen = ETrue;
+		TBuf<60> l;
+		l.Format(_L("engine: back in front, free RAM %d KB"), FreeRamKb());
+		Log(l);
+		Pump();
+		}
+	}
+
+TInt CPpAppUi::IdleStopCallback(TAny* aSelf)
+	{
+	CPpAppUi* ui = (CPpAppUi*)aSelf;
+	ui->iIdleStopper->Cancel();
+	ui->IdleStop();
+	return 0;
+	}
+
+// PsiPDF behind for KPpIdleStop with a file open: the engine stopped (its
+// code, MuPDF's heap and the page drawn ahead given back). The page on the
+// screen stays, with its page, zoom and Find's hits; coming back opens the
+// file again (HandleForegroundEventL, then PumpL).
+void CPpAppUi::IdleStop()
+	{
+	if (iForeground || !iRunning || !iOpen || iOpenPending || iReopening)
+		return;
+	TInt before = FreeRamKb();
+	StopEngine();
+	iJobPic = NULL;
+	iFindPending = 0;
+	BusyEnd();
+	DropPic(iAhead);
+	if (!iShown.iDone || iShown.iFailed)
+		DropPic(iShown);             // (half a page: drawn again when back)
+	iAsleep = ETrue;
+	iReopen = iReopening = EFalse;
+	TBuf<100> l;
+	l.Format(_L("engine: stopped after %d min behind, free RAM %d -> %d KB"), KPpIdleStop / 60000000, before, FreeRamKb());
+	Log(l);
 	}
 
 void CPpAppUi::Log(const TDesC& aText)

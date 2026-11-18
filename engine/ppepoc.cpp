@@ -241,6 +241,11 @@ static void Do(TPpEngine& e)
 		s->result = PP_E_ARGS;
 		break;
 		}
+	// what a page needed while it was drawn (a picture decoded, the band's
+	// pixmap) given back to the system: EPOC's heap never shrinks by itself,
+	// and the engine stayed at its peak for as long as the file was open
+	if (s->cmd != PP_CMD_SIZE)
+		User::Heap().Compress();
 	if (e.iDoc)
 		{
 		s->heap_kb = (int)(pp_heap_now(e.iDoc) / 1024);

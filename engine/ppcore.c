@@ -34,6 +34,7 @@ struct pp_doc
 	int locked;             /* it needs a password not given yet */
 	pp_cached cache[PP_CACHE];
 	unsigned long clock;
+	int drawn;              /* the page drawn last (its pictures in the store), or -1 */
 };
 
 /* ---- the counted allocator: a size word before each block ---- */
@@ -257,6 +258,83 @@ static fz_device *new_split_device(fz_context *ctx, fz_device *to)
 	return dev;
 }
 
+/* ---- pictures of other pages: out of the store ----
+ *
+ * The store keeps a page's decoded pictures, so each band, a new zoom and
+ * Find do not decode them again. Kept after the page, a full-page photo
+ * (2.2 MB decoded) stays while the next one is decoded beside it: the
+ * engine's peak on a photo document was 7.4 MB. Before a page other than
+ * the last one drawn, its decoded pictures go (fonts and the rest stay: the
+ * display lists still use them, and loaded again they would be there twice).
+ * MuPDF 1.3 has no call for this, and its fz_remove_item does not take the
+ * item out of the store's size: the store's layout (store.c, MuPDF 1.3,
+ * which fetch.sh pins by its checksum) is repeated here, and each item is
+ * taken out as store.c's evict() does it.
+ */
+typedef struct pp_item
+{
+	void *key;
+	fz_storable *val;
+	unsigned int size;
+	struct pp_item *next;
+	struct pp_item *prev;
+	fz_store *store;
+	fz_store_type *type;
+} pp_item;
+
+typedef struct pp_store
+{
+	int refs;
+	pp_item *head;
+	pp_item *tail;
+	fz_hash_table *hash;
+	unsigned int max;
+	unsigned int size;
+} pp_store;
+
+static void drop_pictures(fz_context *ctx)
+{
+	pp_store *store = (pp_store *)ctx->store;
+	pp_item *item;
+	if (!store)
+		return;
+	fz_lock(ctx, FZ_LOCK_ALLOC);
+	for (item = store->head; item; )
+	{
+		int drop;
+		if (item->val->free != fz_free_pixmap_imp)
+		{
+			item = item->next;
+			continue;
+		}
+		store->size -= item->size;
+		if (item->next)
+			item->next->prev = item->prev;
+		else
+			store->tail = item->prev;
+		if (item->prev)
+			item->prev->next = item->next;
+		else
+			store->head = item->next;
+		drop = item->val->refs > 0 && --item->val->refs == 0;
+		if (item->type->make_hash_key)
+		{
+			fz_store_hash hash = { NULL };
+			hash.free = item->val->free;
+			if (item->type->make_hash_key(&hash, item->key))
+				fz_hash_remove(ctx, store->hash, &hash);
+		}
+		fz_unlock(ctx, FZ_LOCK_ALLOC);
+		if (drop)
+			item->val->free(ctx, item->val);
+		item->type->drop_key(ctx, item->key);
+		fz_free(ctx, item);
+		fz_lock(ctx, FZ_LOCK_ALLOC);
+		item = store->head;          /* (from the start: the list may have changed) */
+	}
+	fz_unlock(ctx, FZ_LOCK_ALLOC);
+}
+
 /* ---- the document ---- */
 
 static int count_pages(pp_doc *d, int *err, char *msg, int msglen);
@@ -288,6 +366,7 @@ pp_doc *pp_open(const char *path, const char *password, unsigned int store, int 
 	}
 	for (i = 0; i < PP_CACHE; i++)
 		d->cache[i].n = -1;
+	d->drawn = -1;
 	d->alloc.user = &d->heap;
 	d->alloc.malloc = pp_malloc;
 	d->alloc.realloc = pp_realloc;
@@ -561,11 +640,17 @@ int pp_render(pp_doc *d, int n, float scale, int depth, int band,
 		cookie->errors = 0;
 	fz_try(ctx)
 	{
-		pp_cached *c = get_page(d, n);
+		pp_cached *c;
 		fz_display_list *list;
 		fz_matrix ctm;
 		fz_irect box;
 		int y, w, h, k;
+		if (d->drawn != n)
+		{
+			drop_pictures(ctx);
+			d->drawn = n;
+		}
+		c = get_page(d, n);
 		t0 = pp_ms();
 		if (!c->list)
 		{

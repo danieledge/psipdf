@@ -1,6 +1,6 @@
 # PsiPDF
 
-PDF files on the **Psion netBook** and the **Psion Series 5mx** (EPOC Release 5), drawn by [MuPDF](https://mupdf.com/). Version 0.02 (not released yet; the download is 0.01).
+PDF files on the **Psion netBook** and the **Psion Series 5mx** (EPOC Release 5), drawn by [MuPDF](https://mupdf.com/). Version 0.03 (not released yet; the download is 0.01).
 
 PsiPDF opens a PDF from the System screen, from PsiHub or with File > Open, and shows its first page (or the page you left it at) fitted to the width of the screen. It draws real PDF files: embedded fonts, the 14 standard fonts, colour, lines and fills, and JPEG photos. On the netBook pages show in EPOC's 256 colours, error-diffused; on the 5mx in 16 greys.
 
@@ -39,7 +39,9 @@ PsiPDF opens a PDF from the System screen, from PsiHub or with File > Open, and 
 
 100% is the page at its real size on the screen in use. The toolbar shows the page ("Page 3 of 12"); with it hidden, an infoprint says the page when it changes.
 
-The page appears as it is drawn, from the top down, with "Drawing page..." bottom left. While you read it, PsiPDF draws the next page ahead (when there is memory to spare), so turning the page is immediate.
+The page appears as it is drawn, from the top down, with "Drawing page..." bottom left. While you read it, PsiPDF draws the next page ahead (when it is fitted to the width or the page, and there is memory to spare), so turning the page is immediate.
+
+Left behind other programs for five minutes with a file open, PsiPDF stops its engine (MuPDF, 3 to 9 MB with its code), keeping the page on the screen; coming back to it opens the file again at the same page and zoom.
 
 PsiPDF remembers the last eight files with their page and zoom, and opens the last file again when started from its icon (`C:\System\Apps\PsiPDF\PsiPDF.ini`). A file that needs a password asks for it.
 
@@ -68,6 +70,12 @@ An EPOC R5 program is a DLL, and no DLL may have writable static data; MuPDF, Fr
 
 The two share a small global chunk (`psipdf.h`): a command at a time, with psion-core's doorbells (`core/ssh/psibell.h`) so that neither looks for work while idle. A page comes back in a bitmap the program makes, in the screen's own format (EColor256 or EGray16), which the engine fills band by band (about 64 rows at a time, so MuPDF's RGBA pixmap is 160 KB rather than 2.3 MB for the whole page). Each page's display list is kept, so a new zoom does not interpret the page again, and Find reads the same list.
 
+Memory. The netBook has about 16 MB free once it has started, for every program, so PsiPDF takes what it needs from what is free when a file opens:
+- MuPDF's store (decoded pictures and fonts kept between bands and pages): a quarter of the free memory, from 1 MB up to 3 MB (2 MB on the 5mx). A picture is decoded no bigger than the store, so with little memory free a photo is a little softer.
+- The biggest page bitmap: a quarter of the free memory, from 1 MB up to 6 MB. With less memory, 150% and 200% are drawn a little smaller than they say.
+- Only one page is decoded at a time: the pictures of the page drawn before are dropped from the store before the next is drawn (a 4-page photo document: its peak in MuPDF was 7.8 MB, now 5.7 MB on the PC).
+- The engine gives back its heap after each page (EPOC's heap does not shrink by itself), stops after five minutes behind (above), and is ended for certain when PsiPDF closes.
+
 The colours: error diffusion (Floyd-Steinberg, serpentine) to the nearest of EPOC's 256 colours (weighted for the eye, from a 32 x 32 x 32 table made at build time by `tools/mkpal.py`), or to 16 greys on the 5mx. The paper and full black come out exactly and the error arriving there is dropped, so the margins and the space between lines stay plain; the palette's 16 greys are exact steps, so text and its anti-aliased edges stay crisp.
 
 MuPDF 1.3 (August 2013) is the last version that is plain C with no HarfBuzz, which the SDK's gcc 3.0 builds with `-std=gnu99`. The port's shims are in `engine/mu/`: single-precision maths over EPOC's double functions, `float.h`, `snprintf` (psion-core's), and stubs for the parts left out.
@@ -76,7 +84,7 @@ MuPDF 1.3 (August 2013) is the last version that is plain C with no HarfBuzz, wh
 
 - **Not tested:** encrypted files other than 128-bit RC4 (AES, and revisions 5 and 6), Type 3 fonts, shadings (gradients), transparency groups, CMYK and ICC colours, very long documents (hundreds of pages), progressive JPEGs, and any real netBook or 5mx: only the emulators.
 - **Encrypted files in the 5mx emulator:** with the emulator's card speed-up on (its standard), opening an encrypted file, and sometimes a second plain one, switches the emulated machine off: the speed-up runs the card driver's code in the middle of a program's own thread. With it off (`PSION_NO_CF_DIRECT_INVOKE=1`, slower) the password is asked for and the page is drawn. Not seen on the netBook; still to be tried on a real 5mx.
-- **Big pictures at high zoom:** a picture is decoded no bigger than the picture store holds (2 MB on the 5mx, 3 MB on the netBook) and scaled up when drawn bigger, so a full-page photo at 100% or more is decoded once a page rather than at full size for every band (a 1237 x 1280 JPEG: 11.7 MB at its peak before, 3.6 MB now). Very big pictures at 200% are a little softer than their full size. A page that could not all be drawn says so.
+- **Big pictures at high zoom:** a picture is decoded no bigger than the picture store holds (up to 2 MB on the 5mx, 3 MB on the netBook; less when little memory is free) and scaled up when drawn bigger, so a full-page photo at 100% or more is decoded once a page rather than at full size for every band (a 1237 x 1280 JPEG: 11.7 MB at its peak before, 3.6 MB now). Very big pictures at 200% are a little softer than their full size. A page that could not all be drawn says so.
 - **Left out of the build:** JavaScript, CJK fonts and CMaps (Chinese, Japanese and Korean text shows in a substitute or not at all), forms (filled-in fields show only as the file drew them), saving, JBIG2 and JPEG 2000 pictures (these show as blank, and the page says it could not all be drawn).
 - **Not there yet:** links, the outline (bookmarks), text selection and copying, rotating a page, printing.
 - **Speed.** The netBook's SA-1100 has no floating point, and MuPDF does much of its work in floats. In the netBook emulator a page fitted to the width takes, the first time: a page from Coda's Print to PDF 1.2 s, a two-column page in embedded fonts 2.0 s, a plain text page 1.3 to 1.8 s, a full-page photo 3.1 s. A zoom of a page already drawn skips the interpretation (a Coda page at 150%: 1.8 s), and the next page is usually ready before you turn to it. On the 5mx (ARM710T at 36 MHz) a Coda page took about 8 s.
