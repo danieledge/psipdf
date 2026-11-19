@@ -62,10 +62,20 @@
 #include "psimem.h"                  // core/ssh: short of memory, what the programs say to each other
 
 const TUid KUidPsiPdf = { 0x01000AD8 };
-_LIT(KPpVersion, "0.05");
+_LIT(KPpVersion, "0.06");
 _LIT(KPpIni, "C:\\System\\Apps\\PsiPDF\\PsiPDF.ini");
 _LIT(KPpLog, "C:\\System\\Apps\\PsiPDF\\PsiPDF.log");
 _LIT(KPpLogOld, "C:\\System\\Apps\\PsiPDF\\PsiPDF.old");
+_LIT(KPpIniNew, "C:\\System\\Apps\\PsiPDF\\PsiPDF.new");
+// (0.06) the file being opened, until its first page is drawn: a file that
+// ran out of memory, or ended the engine, is not opened again at the next
+// start (the Open dialog still opens it)
+_LIT(KPpTrying, "C:\\System\\Apps\\PsiPDF\\PsiPDF.try");
+// the recogniser (PDF files open in PsiPDF from the System screen): on C:,
+// or in the netBook's ROM; a spare copy beside the program puts it back
+// when C: has been cleared
+_LIT(KPpRecogC, "C:\\System\\Recogs\\PsiPDF.mdl");
+_LIT(KPpRecogZ, "Z:\\System\\Recogs\\PsiPDF.mdl");
 _LIT(KPpEngine, "psipdf.exe");
 
 // the zooms, in the order of View > Zoom
@@ -80,6 +90,8 @@ const TInt KPpRecent = 8;                    // files whose page and zoom are re
 // - MuPDF's store (decoded pictures, fonts): a quarter of it, from 1 MB up
 //   to 3 MB (2 MB on the 5mx); a picture is decoded no bigger than this.
 const TInt KPpMaxBytes = 6 * 1024 * 1024;
+// (0.06) no page bitmap wider or taller than this, whatever the page's size
+const TInt KPpMaxSide = 16384;
 const TInt KPpMinBytes = 1024 * 1024;
 const TInt KPpStoreMinKb = 1024;
 // the next page is drawn ahead only while it is small (fit width or fit
@@ -120,6 +132,7 @@ struct TPpPic
 	TInt iRows;                  // rows drawn so far
 	TBool iDone;                 // all drawn (or failed: iFailed)
 	TBool iFailed;
+	TBool iStopped;              // (0.06) stopped with Esc: not drawn again until asked (Enter)
 	TInt iMs;                    // how long it took
 	};
 
@@ -240,7 +253,11 @@ private:
 	void Busy(const TDesC& aText);
 	void BusyEnd();
 	void Problem(const TDesC& aWhat, TInt aResult);
+	void PartDrawn(TInt aResult);
 	TBool NoFile();
+	void MarkTrying(TBool aOn);
+	TBool WasTrying(const TDesC& aFile);
+	void RestoreRecogniser();
 	void LoadSettings();
 	void SaveSettings();
 	void Remember();
@@ -274,6 +291,9 @@ private:
 	CPeriodic* iIdleStopper;     // the engine stopped after KPpIdleStop behind
 	TBool iAsleep;               // the engine stopped behind: the file is opened again in front
 	TBool iFontTold;             // the font file missing or damaged: said once
+	TBool iPartTold;             // (0.06) a page partly drawn: a dialog once a file, then infoprints
+	TBool iEscStopped;           // Esc pressed while the page shown was being drawn
+	TBool iTryingMarked;         // PsiPDF.try written for iFile (its first page not drawn yet)
 	TInt iTrimFree;              // free RAM (KB) as a trim was asked of the engine
 	TBool iReopen;               // the file to be opened again (the engine started afresh)
 	TBool iReopening;            // ...and its open sent
@@ -620,6 +640,7 @@ void CPpAppUi::ConstructL()
 	iCoeEnv->FsSession().Delete(KPpLogOld);
 	iCoeEnv->FsSession().Rename(KPpLog, KPpLogOld);
 	LoadSettings();
+	RestoreRecogniser();
 	TRAPD(err, ButtonPictureL(EPpCmdPrev, EMbmPpPrev);
 		ButtonPictureL(EPpCmdNext, EMbmPpNext);
 		ButtonPictureL(EPpCmdZoomIn, EMbmPpZoomIn);
@@ -651,7 +672,21 @@ TBool CPpAppUi::ProcessCommandParametersL(TApaCommand aCommand, TFileName& aDocu
 	if (named)
 		OpenPdfL(aDocumentName);
 	else if (iRecentCount && BaflUtils::FileExists(iCoeEnv->FsSession(), iRecent[0].iFile))
-		OpenPdfL(iRecent[0].iFile);
+		{
+		// (0.06) not the file that ran out of memory, or ended the engine,
+		// last time before its page was shown: it would only do it again
+		if (WasTrying(iRecent[0].iFile))
+			{
+			TBuf<300> l;
+			l.Format(_L("not reopened (its page was not shown last time): %S"), &iRecent[0].iFile);
+			Log(l);
+			iCoeEnv->FsSession().Delete(KPpTrying);
+			iNote = _L("Last file not opened again");
+			iNoteWhy = _L("It could not be shown last time - Ctrl+O opens it");
+			}
+		else
+			OpenPdfL(iRecent[0].iFile);
+		}
 	aDocumentName.Zero();
 	return EFalse;
 	}
@@ -938,6 +973,7 @@ void CPpAppUi::Send(TInt aCmd)
 	iS->cmd = aCmd;
 	iJob = aCmd;
 	iStopping = EFalse;
+	iEscStopped = EFalse;
 	iJobStart = iProgressTick = User::TickCount();
 	iSeenRows = iS->rows_done;
 	iSeenProgress = 0;
@@ -1082,6 +1118,22 @@ void CPpAppUi::JobDoneL(TInt aCmd)
 		Log(l);
 		if (result == PP_E_STOPPED)
 			{
+			if (pic == &iShown && iEscStopped)
+				{
+				// (asked for: what was drawn is kept, and the rest left white)
+				iEscStopped = EFalse;
+				pic->iDone = pic->iFailed = pic->iStopped = ETrue;
+				BusyEnd();
+				MarkTrying(EFalse);
+				if (pic->iRows == 0)
+					{
+					iNote = _L("Drawing stopped");
+					iNoteWhy = _L("Enter draws this page again");
+					}
+				iView->DrawNow();
+				iEikonEnv->InfoMsg(_L("Stopped - Enter draws the page again"));
+				break;
+				}
 			DropPic(*pic);               // (half a page: not kept)
 			break;
 			}
@@ -1090,6 +1142,9 @@ void CPpAppUi::JobDoneL(TInt aCmd)
 		if (pic == &iShown)
 			{
 			BusyEnd();
+			// the file showed a page: opened again at the next start
+			if (result != PP_E_MEMORY)
+				MarkTrying(EFalse);
 			if (pic->iFailed && pic->iRows == 0)
 				{
 				// nothing of it drawn: said on the page too
@@ -1099,7 +1154,7 @@ void CPpAppUi::JobDoneL(TInt aCmd)
 					CannotShow(_L("Could not show this page"), _L("Part of it uses a feature PsiPDF does not have"));
 				}
 			else if (pic->iFailed)
-				Problem(result == PP_E_MEMORY ? _L("Not enough memory to show all of this page") : _L("Cannot draw all of this page"), result);
+				PartDrawn(result);
 			iView->DrawNow();
 			// the 14 standard fonts' file could not be used (the engine drew
 			// their text in the one font it keeps): said once
@@ -1344,6 +1399,11 @@ void CPpAppUi::PumpL()
 				TBuf<80> l;
 				l.Format(_L("page %d: no bitmap (%d), free RAM %d KB"), iPage + 1, r, FreeRamKb());
 				Log(l);
+				if (r == KErrTooBig)
+					{
+					CannotShow(_L("This page is too big to show"), _L("Its size is more than PsiPDF can draw"));
+					return;
+					}
 				if (iZoom == EZoomFitWidth)
 					CannotShow(_L("Not enough memory to show this page"), _L("Close other programs, then try again"));
 				else
@@ -1382,7 +1442,7 @@ void CPpAppUi::PumpL()
 			return;
 			}
 		}
-	if (!iShown.iDone)
+	if (!iShown.iDone || iShown.iStopped)
 		return;
 	// drawn: the next page ahead, if there is room for it
 	TInt next = iPage + 1;
@@ -1428,6 +1488,8 @@ void CPpAppUi::OpenPdfL(const TDesC& aName)
 	iFile = p.FullName();
 	iPassword.Zero();
 	iEngineFailed = EFalse;
+	iPartTold = EFalse;
+	MarkTrying(ETrue);
 	iNote.Zero();
 	iNoteWhy.Zero();
 	iOpenPending = ETrue;
@@ -1555,18 +1617,29 @@ TInt CPpAppUi::ScaleFor(TInt aPage, TInt aZoom) const
 TSize CPpAppUi::PixelsFor(TInt aPage, TInt aScale) const
 	{
 	TReal s = aScale / 10000.0;
-	TInt w = (TInt)(iSizes[2 * aPage] / 100.0 * s + 0.999);
-	TInt h = (TInt)(iSizes[2 * aPage + 1] / 100.0 * s + 0.999);
+	// (0.06) worked out in TReal and kept short of what a TInt holds: a
+	// page can say it is any size; CreatePic refuses one past KPpMaxSide
+	TReal rw = iSizes[2 * aPage] / 100.0 * s + 0.999;
+	TReal rh = iSizes[2 * aPage + 1] / 100.0 * s + 0.999;
+	TInt w = rw > KPpMaxSide + 1 ? KPpMaxSide + 1 : (TInt)rw;
+	TInt h = rh > KPpMaxSide + 1 ? KPpMaxSide + 1 : (TInt)rh;
 	return TSize(Max(1, w), Max(1, h));
 	}
 
 TInt CPpAppUi::CreatePic(TPpPic& aPic, TInt aPage, TInt aScale)
 	{
 	DropPic(aPic);
+	// (0.06) a huge page: ScaleFor's smallest scale can still be more than
+	// the bitmap may take (a page metres long), and is refused, not tried
+	TSize size = PixelsFor(aPage, aScale);
+	// (each side at most KPpMaxSide + 1: the product fits in a TInt)
+	TInt bytes = (iMode == EColor256 ? size.iWidth : (size.iWidth + 1) / 2) * size.iHeight;
+	if (size.iWidth > KPpMaxSide || size.iHeight > KPpMaxSide || bytes > iMaxBytes + iMaxBytes / 16)
+		return KErrTooBig;
 	CFbsBitmap* b = new CFbsBitmap;
 	if (!b)
 		return KErrNoMemory;
-	TInt r = b->Create(PixelsFor(aPage, aScale), iMode);
+	TInt r = b->Create(size, iMode);
 	if (r != KErrNone)
 		{
 		delete b;
@@ -1576,7 +1649,7 @@ TInt CPpAppUi::CreatePic(TPpPic& aPic, TInt aPage, TInt aScale)
 	aPic.iPage = aPage;
 	aPic.iScale = aScale;
 	aPic.iRows = 0;
-	aPic.iDone = aPic.iFailed = EFalse;
+	aPic.iDone = aPic.iFailed = aPic.iStopped = EFalse;
 	return KErrNone;
 	}
 
@@ -1595,7 +1668,7 @@ void CPpAppUi::DropPic(TPpPic& aPic)
 	aPic.iPage = -1;
 	aPic.iScale = 0;
 	aPic.iRows = 0;
-	aPic.iDone = aPic.iFailed = EFalse;
+	aPic.iDone = aPic.iFailed = aPic.iStopped = EFalse;
 	}
 
 void CPpAppUi::SwapPics()
@@ -1799,8 +1872,24 @@ void CPpAppUi::DrawPage(CWindowGc& aGc, const TRect& /*aRect*/) const
 		}
 	if (drawnFoot < vis.iBr.iY)
 		{
+		TRect rest(vis.iTl.iX, Max(vis.iTl.iY, drawnFoot), vis.iBr.iX, vis.iBr.iY);
 		aGc.SetBrushColor(KRgbWhite);
-		aGc.DrawRect(TRect(vis.iTl.iX, Max(vis.iTl.iY, drawnFoot), vis.iBr.iX, vis.iBr.iY));
+		aGc.DrawRect(rest);
+		// (0.06) stopped with Esc: the part not drawn says so
+		if (iShown.iStopped && iShown.iPage == iPage && rest.Height() >= 44)
+			{
+			const CFont* f = iEikonEnv->NormalFont();
+			aGc.UseFont(f);
+			aGc.SetPenStyle(CGraphicsContext::ESolidPen);
+			aGc.SetPenColor(KRgbBlack);
+			aGc.SetBrushStyle(CGraphicsContext::ENullBrush);
+			TInt mid = rest.iTl.iY + rest.Height() / 2;
+			aGc.DrawText(_L("Drawing stopped"), TRect(v.iTl.iX, mid - 20, v.iBr.iX, mid), f->AscentInPixels() + 2, CGraphicsContext::ECenter);
+			aGc.DrawText(_L("Enter draws this page again"), TRect(v.iTl.iX, mid, v.iBr.iX, mid + 20), f->AscentInPixels() + 2, CGraphicsContext::ECenter);
+			aGc.DiscardFont();
+			aGc.SetPenStyle(CGraphicsContext::ENullPen);
+			aGc.SetBrushStyle(CGraphicsContext::ESolidBrush);
+			}
 		}
 	// what Find found: shown inverted
 	if (iHitPage == iPage && iHits > 0)
@@ -1842,9 +1931,15 @@ TKeyResponse CPpAppUi::KeyL(const TKeyEvent& aKeyEvent)
 	TBool ctrl = (aKeyEvent.iModifiers & EModifierCtrl) != 0;
 	if (aKeyEvent.iCode == EKeyEscape)
 		{
-		// stops a find, or the page being drawn
+		// stops a find, or the page being drawn (0.06: and it stays
+		// stopped, what was drawn of it shown, until Enter or another page
+		// or zoom; it was drawn again at once)
 		if (iRunning && (iJob == PP_CMD_FIND || (iJob == PP_CMD_RENDER && iJobPic == &iShown)))
+			{
 			iS->cookie.abort = 1;
+			if (iJob == PP_CMD_RENDER)
+				iEscStopped = ETrue;
+			}
 		return EKeyWasConsumed;
 		}
 	if (!iOpen)
@@ -1920,6 +2015,18 @@ TKeyResponse CPpAppUi::KeyL(const TKeyEvent& aKeyEvent)
 			}
 		else
 			PanL(0, -(v.iHeight - 32));
+		break;
+	case EKeyEnter:
+		// a page stopped with Esc, or not all drawn: drawn again
+		if (iShown.iPage == iPage && iShown.iDone && iShown.iFailed && !(iJob == PP_CMD_RENDER && iJobPic == &iShown))
+			{
+			DropPic(iShown);
+			iNote.Zero();
+			iNoteWhy.Zero();
+			Pump();
+			}
+		else
+			return EKeyWasNotConsumed;
 		break;
 	case '+':
 	case '=':
@@ -2201,6 +2308,43 @@ void CPpAppUi::Problem(const TDesC& aWhat, TInt aResult)
 	TRAPD(err, iEikonEnv->InfoWinL(aWhat, why));
 	}
 
+// A page drawn only in part: why, as far as MuPDF's last warning says; a
+// dialog the first time in a file, then an infoprint (one for every page
+// stopped the reading)
+void CPpAppUi::PartDrawn(TInt aResult)
+	{
+	TPtrC what(aResult == PP_E_MEMORY ? _L("Not enough memory to show all of this page") : _L("Cannot draw all of this page"));
+	if (aResult == PP_E_MEMORY)
+		TellShort();
+	if (iPartTold)
+		{
+		iEikonEnv->InfoMsg(what);
+		return;
+		}
+	iPartTold = ETrue;
+	TPtrC why;
+	if (aResult == PP_E_MEMORY)
+		why.Set(_L("Close other programs, then press Enter"));
+	else
+		{
+		TBuf<160> m;
+		TPtrC8 mu((const TUint8*)iS->mu_msg);
+		m.Copy(mu.Left(Min(mu.Length(), m.MaxLength())));
+		m.LowerCase();
+		if (m.Find(_L("jbig2")) >= 0 || m.Find(_L("jpx")) >= 0)
+			why.Set(_L("A picture in it is in a form PsiPDF cannot read"));
+		else if (m.Find(_L("font")) >= 0)
+			why.Set(_L("A font in it could not be read"));
+		else if (m.Find(_L("image")) >= 0)
+			why.Set(_L("A picture in it could not be read"));
+		else if (m.Find(_L("syntax")) >= 0 || m.Find(_L("xref")) >= 0 || m.Find(_L("object")) >= 0 || m.Find(_L("repair")) >= 0)
+			why.Set(_L("Part of the file is damaged"));
+		else
+			why.Set(_L("Part of it uses a feature PsiPDF does not have"));
+		}
+	TRAPD(err, iEikonEnv->InfoWinL(what, why));
+	}
+
 // ----- settings: the toolbar, and the last files with their page and zoom ----
 // PsiPDF.ini: "PsiPDF 1", the toolbar (0 or 1), then one line a file:
 // page TAB zoom TAB name, the latest first
@@ -2247,24 +2391,98 @@ void CPpAppUi::LoadSettings()
 		}
 	}
 
+// (0.06) written whole to PsiPDF.new, then put in PsiPDF.ini's place: a
+// full disk or a write that failed leaves the old settings as they were
+// (PsiPDF.ini was cut to nothing first, and the writes not checked)
 void CPpAppUi::SaveSettings()
 	{
 	RFs& fs = iCoeEnv->FsSession();
 	fs.MkDirAll(KPpIni);
 	RFile f;
-	if (f.Replace(fs, KPpIni, EFileWrite) != KErrNone)
+	if (f.Replace(fs, KPpIniNew, EFileWrite) != KErrNone)
 		return;
 	TBuf8<300> b;
 	b.Format(_L8("PsiPDF 1\r\n%d\r\n"), iToolbarShown ? 1 : 0);
-	f.Write(b);
-	for (TInt i = 0; i < iRecentCount; i++)
+	TInt r = f.Write(b);
+	for (TInt i = 0; i < iRecentCount && r == KErrNone; i++)
 		{
 		b.Format(_L8("%d\t%d\t"), iRecent[i].iPage, iRecent[i].iZoom);
 		b.Append(iRecent[i].iFile.Left(Min(iRecent[i].iFile.Length(), b.MaxLength() - b.Length() - 2)));
 		b.Append(_L8("\r\n"));
-		f.Write(b);
+		r = f.Write(b);
 		}
+	if (r == KErrNone)
+		r = f.Flush();
 	f.Close();
+	if (r == KErrNone)
+		r = fs.Replace(KPpIniNew, KPpIni);
+	if (r != KErrNone)
+		{
+		fs.Delete(KPpIniNew);
+		TBuf<60> l;
+		l.Format(_L("settings: not saved (%d)"), r);
+		Log(l);
+		}
+	}
+
+// PsiPDF.try: the file being opened, until its first page is shown
+void CPpAppUi::MarkTrying(TBool aOn)
+	{
+	RFs& fs = iCoeEnv->FsSession();
+	if (!aOn)
+		{
+		if (iTryingMarked)
+			fs.Delete(KPpTrying);
+		iTryingMarked = EFalse;
+		return;
+		}
+	fs.MkDirAll(KPpTrying);
+	RFile f;
+	if (f.Replace(fs, KPpTrying, EFileWrite) != KErrNone)
+		return;
+	TBuf8<256> b;
+	b.Copy(iFile.Left(Min(iFile.Length(), b.MaxLength())));
+	iTryingMarked = f.Write(b) == KErrNone;
+	f.Close();
+	}
+
+TBool CPpAppUi::WasTrying(const TDesC& aFile)
+	{
+	RFile f;
+	if (f.Open(iCoeEnv->FsSession(), KPpTrying, EFileRead) != KErrNone)
+		return EFalse;
+	TBuf8<256> b;
+	TInt r = f.Read(b);
+	f.Close();
+	if (r != KErrNone)
+		return EFalse;
+	TBuf<256> name;
+	name.Copy(b);
+	return name.CompareF(aFile.Left(Min(aFile.Length(), name.MaxLength()))) == 0;
+	}
+
+// The recogniser on C: (installed there, wherever the program is) is gone
+// when C: has been cleared, and a tap on a PDF on the System screen does
+// nothing: put back from the copy beside the program. The System screen
+// reads it at its next start.
+void CPpAppUi::RestoreRecogniser()
+	{
+	RFs& fs = iCoeEnv->FsSession();
+	if (BaflUtils::FileExists(fs, KPpRecogZ) || BaflUtils::FileExists(fs, KPpRecogC))
+		return;
+	TParse p;
+	TFileName app = Application()->AppFullName();
+	if (p.Set(_L("PsiPDF.mdl"), &app, NULL) != KErrNone || !BaflUtils::FileExists(fs, p.FullName()))
+		return;
+	fs.MkDirAll(KPpRecogC);
+	CFileMan* fm = NULL;
+	TRAPD(r, fm = CFileMan::NewL(fs));
+	if (r == KErrNone)
+		r = fm->Copy(p.FullName(), KPpRecogC);
+	delete fm;
+	TBuf<80> l;
+	l.Format(_L("recogniser: put back on C: (%d), read at the next start"), r);
+	Log(l);
 	}
 
 // the open file at the top of the list, with its page and zoom

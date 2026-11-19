@@ -80,14 +80,26 @@ static void *pp_realloc(void *user, void *old, unsigned int size)
 		pp_free(user, old);
 		return NULL;
 	}
+	/* (0.06) the system's own reallocation, which grows a block where it
+	   is when it can: a copy every time made a 3 MB stream need 6 to 9 MB */
 	p = (unsigned long *)old - 2;
 	had = (unsigned int)p[0];
-	q = pp_malloc(user, size);
+	q = pp_sys_realloc(p, size + 2 * sizeof(unsigned long));
 	if (!q)
+	{
+		((pp_heap *)user)->failed = 1;
 		return NULL;
-	memcpy(q, old, had < size ? had : size);
-	pp_free(user, old);
-	return q;
+	}
+	p = (unsigned long *)q;
+	p[0] = size;
+	{
+		pp_heap *h = (pp_heap *)user;
+		h->now += size;
+		h->now -= had;
+		if (h->now > h->peak)
+			h->peak = h->now;
+	}
+	return p + 2;
 }
 
 static void copy_msg(char *msg, int len, const char *s)
@@ -144,6 +156,172 @@ static fz_device *target(fz_device *dev) { return (fz_device *)dev->user; }
  */
 static unsigned int pp_image_budget = 2048 * 1024;
 
+/*
+ * (0.06) MuPDF reduces only a JPEG as it decodes it; any other picture (a
+ * fax or Flate scan) it decodes whole and reduces after: a 300 dpi A4 scan
+ * took 17 MB (1 bit a pixel) or 26 MB (8 bits) for a picture drawn at
+ * 620 x 877. Those are decoded here a few rows at a time instead, each strip
+ * reduced as it comes, so no more than the reduced picture and one strip is
+ * held. Kept in the store like MuPDF's own (under a key of their own).
+ */
+typedef struct pp_image_key
+{
+	int refs;
+	fz_image *image;
+	int l2factor;
+} pp_image_key;
+
+static int pp_hash_image_key(fz_store_hash *hash, void *key_)
+{
+	pp_image_key *key = (pp_image_key *)key_;
+	hash->u.pi.ptr = key->image;
+	hash->u.pi.i = key->l2factor + 256;     /* (never one of MuPDF's: 0 to 8) */
+	return 1;
+}
+
+static void *pp_keep_image_key(fz_context *ctx, void *key_)
+{
+	pp_image_key *key = (pp_image_key *)key_;
+	fz_lock(ctx, FZ_LOCK_ALLOC);
+	key->refs++;
+	fz_unlock(ctx, FZ_LOCK_ALLOC);
+	return key;
+}
+
+static void pp_drop_image_key(fz_context *ctx, void *key_)
+{
+	pp_image_key *key = (pp_image_key *)key_;
+	int drop;
+	if (!key)
+		return;
+	fz_lock(ctx, FZ_LOCK_ALLOC);
+	drop = --key->refs;
+	fz_unlock(ctx, FZ_LOCK_ALLOC);
+	if (drop == 0)
+	{
+		fz_drop_image(ctx, key->image);
+		fz_free(ctx, key);
+	}
+}
+
+static int pp_cmp_image_key(void *k0_, void *k1_)
+{
+	pp_image_key *k0 = (pp_image_key *)k0_, *k1 = (pp_image_key *)k1_;
+	return k0->image == k1->image && k0->l2factor == k1->l2factor;
+}
+
+#ifndef NDEBUG
+static void pp_debug_image(FILE *out, void *key_)
+{
+	pp_image_key *key = (pp_image_key *)key_;
+	fprintf(out, "(psipdf image %d x %d sf=%d) ", key->image->w, key->image->h, key->l2factor);
+}
+#endif
+
+static fz_store_type pp_image_store_type =
+{
+	pp_hash_image_key,
+	pp_keep_image_key,
+	pp_drop_image_key,
+	pp_cmp_image_key,
+#ifndef NDEBUG
+	pp_debug_image
+#endif
+};
+
+/* rows of im at a reduction of 2^l2factor, a strip of 2^l2factor rows at a time */
+static fz_pixmap *pp_decode_reduced(fz_context *ctx, fz_image *im, int l2factor)
+{
+	fz_stream *volatile stm = NULL;
+	fz_pixmap *volatile out = NULL;
+	fz_pixmap *volatile tile = NULL;
+	int f = 1 << l2factor;
+	int ow = (im->w + f - 1) >> l2factor, oh = (im->h + f - 1) >> l2factor;
+	int native = 0;
+	int indexed = fz_colorspace_is_indexed(im->colorspace);
+	fz_try(ctx)
+	{
+		int y, oy = 0;
+		stm = fz_open_image_decomp_stream(ctx, im->buffer, &native);
+		for (y = 0; y < im->h; y += f, oy++)
+		{
+			fz_image strip = *im;
+			int bytes;
+			strip.h = im->h - y < f ? im->h - y : f;
+			/* (it closes the stream it is given: a second reference) */
+			tile = fz_decomp_image_from_stream(ctx, fz_keep_stream(stm), &strip, 0, indexed, l2factor, 0);
+			if (!out)
+			{
+				out = fz_new_pixmap(ctx, tile->colorspace, ow, oh);
+				out->interpolate = im->interpolate;
+			}
+			if (tile->w != ow || tile->h != 1 || tile->n != out->n)
+				fz_throw(ctx, FZ_ERROR_GENERIC, "picture strip %d x %d, not %d x 1", tile->w, tile->h, ow);
+			bytes = ow * out->n;
+			memcpy(out->samples + oy * bytes, tile->samples, bytes);
+			fz_drop_pixmap(ctx, tile);
+			tile = NULL;
+		}
+	}
+	fz_always(ctx)
+	{
+		fz_close(stm);
+		fz_drop_pixmap(ctx, tile);
+	}
+	fz_catch(ctx)
+	{
+		fz_drop_pixmap(ctx, out);
+		fz_rethrow(ctx);
+	}
+	return out;
+}
+
+/* a picture MuPDF would decode whole, reduced as it is decoded (above) */
+static fz_pixmap *pp_get_reduced(fz_context *ctx, fz_image *im, int w, int h)
+{
+	pp_image_key key, *keyp = NULL;
+	fz_pixmap *tile, *existing;
+	int l2factor;
+	if (w > im->w)
+		w = im->w;
+	if (h > im->h)
+		h = im->h;
+	/* (as fz_image_get_pixmap chooses it) */
+	for (l2factor = 0; im->w >> (l2factor + 1) >= w && im->h >> (l2factor + 1) >= h && l2factor < 8; l2factor++);
+	if (l2factor == 0)
+		return fz_image_get_pixmap(ctx, im, w, h);
+	key.refs = 1;
+	key.image = im;
+	key.l2factor = l2factor;
+	tile = fz_find_item(ctx, fz_free_pixmap_imp, &key, &pp_image_store_type);
+	if (tile)
+		return tile;
+	tile = pp_decode_reduced(ctx, im, l2factor);
+	fz_var(keyp);
+	fz_try(ctx)
+	{
+		keyp = fz_malloc_struct(ctx, pp_image_key);
+		keyp->refs = 1;
+		keyp->image = fz_keep_image(ctx, im);
+		keyp->l2factor = l2factor;
+		existing = fz_store_item(ctx, keyp, tile, fz_pixmap_size(ctx, tile), &pp_image_store_type);
+		if (existing)
+		{
+			fz_drop_pixmap(ctx, tile);
+			tile = existing;
+		}
+	}
+	fz_always(ctx)
+	{
+		pp_drop_image_key(ctx, keyp);
+	}
+	fz_catch(ctx)
+	{
+		/* (not kept: it is still drawn) */
+	}
+	return tile;
+}
+
 static fz_pixmap *pp_get_pixmap(fz_context *ctx, fz_image *im, int w, int h)
 {
 	int k = 0;
@@ -152,8 +330,13 @@ static fz_pixmap *pp_get_pixmap(fz_context *ctx, fz_image *im, int w, int h)
 	if (k > 0)
 	{
 		int cw = im->w >> k, ch = im->h >> k;
+		int type = im->buffer ? im->buffer->params.type : FZ_IMAGE_UNKNOWN;
 		if (w > cw) w = cw > 0 ? cw : 1;
 		if (h > ch) h = ch > 0 ? ch : 1;
+		/* (a JPEG is reduced by its decoder; PNG and TIFF are not in a PDF) */
+		if (im->buffer && type != FZ_IMAGE_JPEG && type != FZ_IMAGE_PNG && type != FZ_IMAGE_TIFF &&
+			type != FZ_IMAGE_JPX && type != FZ_IMAGE_JBIG2)
+			return pp_get_reduced(ctx, im, w, h);
 	}
 	return fz_image_get_pixmap(ctx, im, w, h);
 }

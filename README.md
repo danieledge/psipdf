@@ -32,7 +32,7 @@ PsiPDF opens a PDF from the System screen, from PsiHub or with File > Open, and 
 | Move round the page | the arrow keys (Ctrl: a screen at a time) | drag with the pen |
 | Top or foot of the page | Fn+Left (Home), Fn+Right (End) | |
 | Find text | Ctrl+F, then Ctrl+J for the next | Edit > Find, Find next |
-| Stop drawing or finding | Esc | |
+| Stop drawing or finding | Esc | the page stays as far as it was drawn; Enter draws it again (and a page not all drawn) |
 | Show or hide the toolbar | Ctrl+T | View > Show toolbar |
 | Document details | Shift+Ctrl+D | File > Document details |
 | About PsiPDF | Shift+Ctrl+A | Tools > About PsiPDF |
@@ -43,9 +43,9 @@ The page appears as it is drawn, from the top down, with "Drawing page..." botto
 
 Left behind other programs for five minutes with a file open, PsiPDF stops its engine (MuPDF, 3 to 9 MB with its code), keeping the page on the screen; coming back to it opens the file again at the same page and zoom.
 
-PsiPDF remembers the last eight files with their page and zoom, and opens the last file again when started from its icon (`C:\System\Apps\PsiPDF\PsiPDF.ini`). A file that needs a password asks for it.
+PsiPDF remembers the last eight files with their page and zoom, and opens the last file again when started from its icon (`C:\System\Apps\PsiPDF\PsiPDF.ini`), unless its page could not be shown last time (it ran out of memory or stopped the engine): then it waits for Ctrl+O. A file that needs a password asks for it.
 
-A page that cannot be shown says so, in a dialog and in its place on the screen ("Could not show this page", "Not enough memory to show this page"), never a blank page. PsiPDF keeps a log of each session in `C:\System\Apps\PsiPDF\PsiPDF.log` (on the internal disk, wherever PsiPDF is installed), and the session before in `PsiPDF.old`: send both with a report. A session that never showed its page has `engine: started` with no `engine: ready` after it.
+A page that cannot be shown says so, in a dialog and in its place on the screen ("Could not show this page", "Not enough memory to show this page", "This page is too big to show"), never a blank page. A page drawn only in part says so in a dialog the first time in a file, then in an infoprint. PsiPDF keeps a log of each session in `C:\System\Apps\PsiPDF\PsiPDF.log` (on the internal disk, wherever PsiPDF is installed), and the session before in `PsiPDF.old`: send both with a report. A session that never showed its page has `engine: started` with no `engine: ready` after it.
 
 | | |
 |---|---|
@@ -57,7 +57,7 @@ Screenshots from the netBook and Series 5mx emulators, of PsiPDF's own test file
 
 ## Installing
 
-Install `PsiPDF.sis` on the card (D:): copy it to the Psion and tap it on the System screen. It is about 1.7 MB: the program, its engine (1.1 MB), the font file (`PsiPDF.fnt`, 0.3 MB: the 14 standard PDF fonts), the recogniser (so that PDF files open in PsiPDF), and the EPOC C library the engine needs (the 5mx's ROM does not have it). One package serves both machines.
+Install `PsiPDF.sis` on the card (D:): copy it to the Psion and tap it on the System screen. It is about 1.7 MB: the program, its engine (1.1 MB), the font file (`PsiPDF.fnt`, 0.3 MB: the 14 standard PDF fonts), the recogniser (so that PDF files open in PsiPDF; it goes on the internal disk, with a spare copy beside the program, from which PsiPDF puts it back if the internal disk has been cleared), and the EPOC C library the engine needs (the 5mx's ROM does not have it). One package serves both machines.
 
 ## How it works
 
@@ -74,6 +74,8 @@ Memory. The netBook has about 16 MB free once it has started, for every program,
 - MuPDF's store (decoded pictures and fonts kept between bands and pages): a quarter of the free memory, from 1 MB up to 3 MB (2 MB on the 5mx). A picture is decoded no bigger than the store, so with little memory free a photo is a little softer.
 - The biggest page bitmap: a quarter of the free memory, from 1 MB up to 6 MB. With less memory, 150% and 200% are drawn a little smaller than they say.
 - Only one page is decoded at a time: the pictures of the page drawn before are dropped from the store before the next is drawn (a 4-page photo document: its peak in MuPDF was 7.8 MB, now 5.7 MB on the PC).
+- Scanned pages (fax or Flate pictures, which MuPDF decodes whole before it reduces them) are decoded a few rows at a time and reduced as they come: a 300 dpi A4 scan took 18.7 MB (1 bit a pixel) or 26 MB (8 bits) at its peak, now about 1 MB.
+- The engine may take no more than was free when a page began, less 1 MB for the system and the other programs; past that, MuPDF gives back what it keeps and tries again, or the page says there is not enough memory. A page bitmap is at most 16,384 pixels a side, whatever size the page says it is.
 - The engine gives back its heap after each page (EPOC's heap does not shrink by itself), stops after five minutes behind (above), and is ended for certain when PsiPDF closes.
 - The 14 standard PDF fonts are not in the engine's code (a program on the card is in memory whole while it runs) but in `PsiPDF.fnt` beside it, in `\System\Apps\PsiPDF\` on the disk PsiPDF is installed on. The engine (`engine/ppfont.c`) reads one font when a PDF asks for it (16 to 30 KB each), shares it between every use in the file, and frees it when MuPDF lets the font go or the file closes. A PDF with its fonts embedded reads none. Helvetica alone (16 KB) stays in the engine: if the font file is missing or damaged the file still opens, text in the standard fonts shows in Helvetica, and PsiPDF says so once ("PsiPDF's font file not found"). The font file is checked as it is read (its length, each font's place and checksum).
 - MuPDF's Unicode tables (ucdn, 102 KB) are left out: the one thing used from them, a character's direction class for Find, is a 6 KB table made from them at build time (`tools/mkbidi.c`, `engine/mu/ppbidi.c`), checked against ucdn for every character (`make TARGET=host bidicheck`).
@@ -114,6 +116,7 @@ MuPDF's source is never in this repository: `fetch.sh` downloads the official re
 ## Testing
 
 - `test/mkpdfs.py OUTDIR --coda FILE --photo FILE.jpg` makes the test files: a page from Coda's Print to PDF, a two-column text page in embedded TrueType fonts, a photo page, a 12-page document and one with a password ("psion").
+- `test/mkbig.py OUTDIR` makes the memory tests: a 300 dpi A4 scan at 1 and 8 bits a pixel, and a page too big for any bitmap. On the PC, `build/host/pphost` prints each page's heap peak (0.06: about 1 MB for the scans, 18.7 and 26 MB before). In the netBook emulator, 0.05 said "Not enough memory" for both scans and 0.06 shows them (`docs/img/2026-11-19-memory/`: the scan and the huge page before and after, and a page stopped with Esc).
 - **netBook emulator:** the emulator does not mount the card, so `test/emu/nbimage.mts` puts PsiPDF in the ROM of a scratch test image with its engine in parts, which a test launcher joins on C: at boot (PsiPDF looks for its engine in `\System\Apps\PsiPDF\` on every disk). `test/emu/run.sh` runs a script of keys and taps (`test/emu/emu.py`) and keeps PsiPDF's log. This needs the Coda image tools.
 - **Series 5mx emulator:** `node --experimental-strip-types core/tools/emu/mkcard.ts psipdf` makes a card with PsiPDF installed on it (`test/emu/psipdf.card.ts`); then `core/tools/emu/run.sh`.
 

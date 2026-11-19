@@ -9,6 +9,7 @@
 // Copyright (C) 2026 Dan Edge. AGPL-3.0-or-later: see LICENSE.
 #include <e32std.h>
 #include <e32base.h>
+#include <e32hal.h>
 #include <f32file.h>
 #include <fbs.h>
 #include <string.h>
@@ -26,16 +27,64 @@ long pp_ms(void)
 	return (long)((t / 64) * 1000 + (t % 64) * 1000 / 64);
 	}
 
+// (0.06) The heap may grow to 24 MB (the Makefile), more than the machine
+// has to spare: a block that would grow it past what was free when the
+// command began, less KPpReserve for the system and the other programs, is
+// refused, and MuPDF gives back what it keeps and tries again, or says
+// there is not enough memory. 0: no limit (between commands).
+static TInt gHeapLimit = 0;
+const TInt KPpReserve = 1024 * 1024;
+
+static TBool OverLimit()
+	{
+	return gHeapLimit > 0 && User::Heap().Size() > gHeapLimit;
+	}
+
 void* pp_sys_malloc(unsigned int n)
 	{
-	return User::Alloc(n);
+	if (gHeapLimit > 0 && (TInt)n > gHeapLimit)
+		return NULL;
+	void* p = User::Alloc(n);
+	if (p && OverLimit())
+		{
+		User::Free(p);
+		return NULL;
+		}
+	return p;
 	}
 
 void pp_sys_free(void* p)
 	{
 	User::Free(p);
 	}
+
+void* pp_sys_realloc(void* p, unsigned int n)
+	{
+	if (gHeapLimit > 0 && (TInt)n > gHeapLimit)
+		return NULL;
+	TInt had = User::AllocLen(p);
+	void* q = User::ReAlloc(p, n);
+	if (q == p && OverLimit() && (TInt)n > had)
+		{
+		// (grown in place past the limit: back to its old size, which
+		// neither moves nor fails; moved, the old block is already free
+		// and the new one is kept)
+		User::ReAlloc(q, had);
+		return NULL;
+		}
+	return q;
+	}
 }
+
+// the limit for the command about to run: the heap as it is, and what the
+// machine has free beyond the reserve
+static void SetHeapLimit()
+	{
+	TMemoryInfoV1Buf mem;
+	UserHal::MemoryInfo(mem);
+	TInt spare = mem().iFreeRamInBytes - KPpReserve;
+	gHeapLimit = User::Heap().Size() + Max(spare, 256 * 1024);
+	}
 
 // the engine's state
 struct TPpEngine
@@ -229,6 +278,7 @@ static void Do(TPpEngine& e)
 	{
 	PpShared* s = e.iS;
 	s->msg[0] = 0;
+	SetHeapLimit();
 	switch (s->cmd)
 		{
 	case PP_CMD_OPEN: DoOpen(e); break;
@@ -250,6 +300,7 @@ static void Do(TPpEngine& e)
 		s->result = PP_E_ARGS;
 		break;
 		}
+	gHeapLimit = 0;
 	s->font_trouble = pp_font_trouble();
 	// what a page needed while it was drawn (a picture decoded, the band's
 	// pixmap) given back to the system: EPOC's heap never shrinks by itself,

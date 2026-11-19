@@ -27,6 +27,7 @@ long pp_ms(void)
 }
 void *pp_sys_malloc(unsigned int n) { return malloc(n); }
 void pp_sys_free(void *p) { free(p); }
+void *pp_sys_realloc(void *p, unsigned int n) { return realloc(p, n); }
 const char *pp_messages(void) { return ""; }
 
 typedef struct out

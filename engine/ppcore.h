@@ -44,6 +44,9 @@ typedef struct pp_quant pp_quant;
 long pp_ms(void);
 void *pp_sys_malloc(unsigned int n);
 void pp_sys_free(void *p);
+/* p (from pp_sys_malloc) at n bytes, moved only if it must be; NULL (p
+   left as it was) without memory */
+void *pp_sys_realloc(void *p, unsigned int n);
 
 /* MuPDF's cookie, shared with whoever may stop a job: abort (set to 1 to
    stop), progress. Laid out as fz_cookie (MuPDF 1.3). */
