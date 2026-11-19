@@ -7,7 +7,7 @@
 enum TPpCommandIds
 	{
 	EPpCmdOpen = 0x1000,        // File > Open file... (Ctrl+O)
-	EPpCmdDetails,              // File > Document details... (Shift+Ctrl+D)
+	EPpCmdDetails,              // File > File details... (Shift+Ctrl+D)
 	EPpCmdFind,                 // Edit > Find... (Ctrl+F)
 	EPpCmdFindNext,             // Edit > Find next (Ctrl+J)
 	EPpCmdGoTo,                 // Edit > Go to page... (Ctrl+G)
@@ -25,7 +25,9 @@ enum TPpCommandIds
 	EPpCmdToolbar,              // View > Show toolbar (Ctrl+T)
 	EPpCmdAbout,                // Tools > About PsiPDF (Shift+Ctrl+A)
 	EPpCmdFileName,             // the toolbar's file name
-	EPpCmdPageLabel             // the toolbar's "Page 3 of 12"
+	EPpCmdPageLabel,            // the toolbar's "Page 3 of 12"
+	EPpCmdHelp,                 // Tools > Help on PsiPDF (Shift+Ctrl+H)
+	EPpCmdKeepLog               // Tools > Keep a log
 	};
 
 enum TPpDialogIds
@@ -39,7 +41,7 @@ enum TPpDialogIds
 	EPpDlgAboutText,            // About: what it does, and the copyright line
 	EPpDlgAboutMuPdf,           // About: MuPDF's line
 	EPpDlgAboutSource,          // About: where the source is
-	EPpDlgDetails1,             // Document details: its lines
+	EPpDlgDetails1,             // File details: its lines
 	EPpDlgDetails2,
 	EPpDlgDetails3,
 	EPpDlgDetails4

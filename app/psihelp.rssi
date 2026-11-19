@@ -1,0 +1,30 @@
+// (a copy of Coda's psisys/psihelp.rssi, kept the same in every Coda program: change both)
+// psihelp.rssi: the Help dialog's resource (psihelp.h), included by each Coda
+// program's .rss after its own resources:
+//   #include "psihelp.hrh"   (with the program's .hrh)
+//   #include "psihelp.rssi"  (at the end)
+// The title ("Help on PsiFiles") is set at run time. A fixed size, as
+// PsiMail's, PsiTerm's and PsiLinux's Help: 520 px wide, 7 lines (the
+// netBook's 640 x 480 gets 12: PSIHELP_LINES 12 and PSIHELP_HEIGHT 204 before the include).
+#ifndef PSIHELP_LINES
+#define PSIHELP_LINES 7
+#define PSIHELP_HEIGHT 118
+#endif
+RESOURCE DIALOG r_psi_help_dialog
+	{
+	title="Help";
+	flags=EEikDialogFlagWait|EEikDialogFlagNotifyEsc;
+	buttons=R_EIK_BUTTONS_CONTINUE;
+	items=
+		{
+		DLG_LINE { type=EEikCtChoiceList; prompt="Topic"; id=EPsiHelpTopic;
+			control=CHOICELIST { array_id=r_psi_help_empty; }; },
+		DLG_LINE { type=EEikCtRichTextEditor; prompt=""; id=EPsiHelpText;
+			control=RTXTED { width=520; height=PSIHELP_HEIGHT; numlines=PSIHELP_LINES; textlimit=6000; flags=EEikEdwinNoAutoSelection|EEikEdwinReadOnly; }; }
+		};
+	}
+
+RESOURCE ARRAY r_psi_help_empty
+	{
+	items={ LBUF { txt="-"; } };
+	}

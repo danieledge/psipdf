@@ -14,4 +14,4 @@ RESOURCE      psipdf.rss
 USERINCLUDE   \ptproj\psipdf
 SYSTEMINCLUDE \epoc32\include
 
-LIBRARY       euser.lib efsrv.lib apparc.lib cone.lib eikon.lib ws32.lib gdi.lib fbscli.lib bafl.lib apgrfx.lib
+LIBRARY       euser.lib efsrv.lib apparc.lib cone.lib eikon.lib etext.lib ws32.lib gdi.lib fbscli.lib bafl.lib apgrfx.lib

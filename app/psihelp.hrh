@@ -1,0 +1,7 @@
+// (a copy of Coda's psisys/psihelp.hrh, kept the same in every Coda program: change both)
+// psihelp.hrh: the control ids of the Help dialog (psihelp.h, psihelp.rssi)
+#ifndef PSIHELP_HRH
+#define PSIHELP_HRH
+#define EPsiHelpTopic 0x7e01
+#define EPsiHelpText  0x7e02
+#endif

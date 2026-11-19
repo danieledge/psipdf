@@ -34,7 +34,9 @@ PsiPDF opens a PDF from the System screen, from PsiHub or with File > Open, and 
 | Find text | Ctrl+F, then Ctrl+J for the next | Edit > Find, Find next |
 | Stop drawing or finding | Esc | the page stays as far as it was drawn; Enter draws it again (and a page not all drawn) |
 | Show or hide the toolbar | Ctrl+T | View > Show toolbar |
-| Document details | Shift+Ctrl+D | File > Document details |
+| File details | Shift+Ctrl+D | File > File details |
+| Keep a log | | Tools > Keep a log |
+| Help | Shift+Ctrl+H | Tools > Help on PsiPDF |
 | About PsiPDF | Shift+Ctrl+A | Tools > About PsiPDF |
 
 100% is the page at its real size on the screen in use. The toolbar shows the page ("Page 3 of 12"); with it hidden, an infoprint says the page when it changes.
@@ -45,7 +47,7 @@ Left behind other programs for five minutes with a file open, PsiPDF stops its e
 
 PsiPDF remembers the last eight files with their page and zoom, and opens the last file again when started from its icon (`C:\System\Apps\PsiPDF\PsiPDF.ini`), unless its page could not be shown last time (it ran out of memory or stopped the engine): then it waits for Ctrl+O. A file that needs a password asks for it.
 
-A page that cannot be shown says so, in a dialog and in its place on the screen ("Could not show this page", "Not enough memory to show this page", "This page is too big to show"), never a blank page. A page drawn only in part says so in a dialog the first time in a file, then in an infoprint. PsiPDF keeps a log of each session in `C:\System\Apps\PsiPDF\PsiPDF.log` (on the internal disk, wherever PsiPDF is installed), and the session before in `PsiPDF.old`: send both with a report. A session that never showed its page has `engine: started` with no `engine: ready` after it.
+A page that cannot be shown says so, in a dialog and in its place on the screen ("Could not show this page", "Not enough memory to show this page", "This page is too big to show"), never a blank page. A page drawn only in part says so in a dialog the first time in a file, then in an infoprint. With Tools > Keep a log ticked (or Coda's debug mode on: Control panel > Diagnostics), PsiPDF keeps a log of each session in `C:\System\Apps\PsiPDF\PsiPDF.log` (on the internal disk, wherever PsiPDF is installed), and the session before in `PsiPDF.old`: send both with a report. Without it, no log is written. A session that never showed its page has `engine: started` with no `engine: ready` after it.
 
 | | |
 |---|---|

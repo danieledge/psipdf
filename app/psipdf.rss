@@ -18,8 +18,12 @@ NAME PSPD
 #include <eikedwin.rh>
 #include <eikmfne.rh>
 #include <eikseced.rh>
+#include <eikchlst.rh>
+#include <eikrted.rh>
+#include <eikedwin.hrh>
 #include <eikon.rsg>
 #include "psipdf.hrh"
+#include "psihelp.hrh"
 
 RESOURCE RSS_SIGNATURE { }
 
@@ -100,6 +104,7 @@ RESOURCE HOTKEYS r_pp_hotkeys
 		HOTKEY { command=EPpCmdAbout; key='a'; },
 		HOTKEY { command=EPpCmdPrev; key='b'; },
 		HOTKEY { command=EPpCmdDetails; key='d'; },
+		HOTKEY { command=EPpCmdHelp; key='h'; },
 		HOTKEY { command=EPpCmdZoomOut; key='m'; },
 		HOTKEY { command=EPpCmdNext; key='n'; },
 		HOTKEY { command=EPpCmdFitPage; key='w'; }
@@ -122,7 +127,7 @@ RESOURCE MENU_PANE r_pp_file_menu
 	items=
 		{
 		MENU_ITEM { command=EPpCmdOpen; txt="Open file..."; },
-		MENU_ITEM { command=EPpCmdDetails; txt="Document details..."; flags=EEikMenuItemSeparatorAfter; },
+		MENU_ITEM { command=EPpCmdDetails; txt="File details..."; flags=EEikMenuItemSeparatorAfter; },
 		MENU_ITEM { command=EEikCmdExit; txt="Close"; }
 		};
 	}
@@ -168,6 +173,8 @@ RESOURCE MENU_PANE r_pp_tools_menu
 	{
 	items=
 		{
+		MENU_ITEM { command=EPpCmdKeepLog; txt="Keep a log"; flags=EEikMenuItemCheckBox|EEikMenuItemSeparatorAfter; },
+		MENU_ITEM { command=EPpCmdHelp; txt="Help on PsiPDF"; },
 		MENU_ITEM { command=EPpCmdAbout; txt="About PsiPDF"; }
 		};
 	}
@@ -198,7 +205,8 @@ RESOURCE DIALOG r_pp_find_dialog
 		};
 	}
 
-// a file that needs a password to open
+// a file that needs a password to open (the label: "\"name\" needs a
+// password", the name shortened to fit its 40)
 RESOURCE DIALOG r_pp_password_dialog
 	{
 	title="Password";
@@ -206,15 +214,15 @@ RESOURCE DIALOG r_pp_password_dialog
 	buttons=R_EIK_BUTTONS_CANCEL_OK;
 	items=
 		{
-		DLG_LINE { type=EEikCtLabel; id=EPpDlgPasswordFile; control=LABEL { reserve_length=32; txt="-"; }; },
+		DLG_LINE { type=EEikCtLabel; id=EPpDlgPasswordFile; control=LABEL { reserve_length=40; txt="-"; }; },
 		DLG_LINE { type=EEikCtSecretEd; prompt="Password"; id=EPpDlgPassword; control=SECRETED { num_letters=20; }; }
 		};
 	}
 
-// File > Document details: the file, its title, pages and size (set at run time)
+// File > File details: the file, its title, pages and size (set at run time)
 RESOURCE DIALOG r_pp_details_dialog
 	{
-	title="Document details";
+	title="File details";
 	flags=EEikDialogFlagWait;
 	buttons=R_EIK_BUTTONS_CONTINUE;
 	items=
@@ -246,3 +254,6 @@ RESOURCE DIALOG r_pp_about_dialog
 	}
 
 RESOURCE TBUF r_pp_open_title { buf="Open PDF file"; }
+
+// Tools > Help on PsiPDF (Shift+Ctrl+H): the topics are in psipdf.cpp
+#include "psihelp.rssi"

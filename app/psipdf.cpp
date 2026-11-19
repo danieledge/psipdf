@@ -60,6 +60,8 @@
 #include <psipdf.rsg>
 #include "psipdf.hrh"
 #include "psimem.h"                  // core/ssh: short of memory, what the programs say to each other
+#include "psihelp.h"                 // Tools > Help on PsiPDF (Coda's Help dialog)
+#include "psierr.h"                  // an error as words for a message
 
 const TUid KUidPsiPdf = { 0x01000AD8 };
 _LIT(KPpVersion, "0.06");
@@ -67,6 +69,33 @@ _LIT(KPpIni, "C:\\System\\Apps\\PsiPDF\\PsiPDF.ini");
 _LIT(KPpLog, "C:\\System\\Apps\\PsiPDF\\PsiPDF.log");
 _LIT(KPpLogOld, "C:\\System\\Apps\\PsiPDF\\PsiPDF.old");
 _LIT(KPpIniNew, "C:\\System\\Apps\\PsiPDF\\PsiPDF.new");
+_LIT(KPpDiagOn, "C:\\System\\Data\\PsiDiag.on");   // Coda's debug mode (Control panel > Diagnostics)
+const TInt KPpMaxPages = 99999;      // (the most Go to page takes; a file that says more is shown to there)
+
+// Tools > Help on PsiPDF (Shift+Ctrl+H). British English, the user's words,
+// the keys as the keyboard prints them; what the code does, nothing more
+static const TPsiHelpTopic KPpHelp[] =
+	{
+	{ "Reading",
+	  "PsiPDF shows PDF files. Tap one on the System screen, or use File > Open file (Ctrl+O). "
+	  "Started from its icon, PsiPDF opens the last file again, at the page and zoom it was left at.\n\n"
+	  "Fn+Down and Fn+Up (or Shift+Ctrl+N and Shift+Ctrl+B, the toolbar, or the dog-ears in the "
+	  "bottom corners) turn the page; Ctrl+Fn+Up and Ctrl+Fn+Down go to the first and last page, "
+	  "and Edit > Go to page (Ctrl+G) to any. The arrow keys, or the pen, move round the page.\n\n"
+	  "Ctrl+M and Shift+Ctrl+M zoom in and out, round fit width, fit page, 100%, 150% and 200%. "
+	  "Ctrl+W fits the width (the standard), Shift+Ctrl+W the page." },
+	{ "Finding text",
+	  "Edit > Find (Ctrl+F) finds text, in any case, from the page shown onwards; Find next (Ctrl+J) "
+	  "finds the next. Esc stops it.\n\n"
+	  "File > File details (Shift+Ctrl+D) shows the file's title, its pages and size." },
+	{ "Big pages",
+	  "A page appears as it is drawn, from the top down. Esc stops the drawing; Enter draws the page "
+	  "again. While you read, PsiPDF draws the next page ahead if there is the memory.\n\n"
+	  "A page that cannot be shown says why, on the screen. Pages with many pictures need the most "
+	  "memory: close other programs and press Enter.\n\n"
+	  "Tools > Keep a log writes what PsiPDF does to PsiPDF.log, for whoever is looking into a "
+	  "problem." },
+	};
 // (0.06) the file being opened, until its first page is drawn: a file that
 // ran out of memory, or ended the engine, is not opened again at the next
 // start (the Open dialog still opens it)
@@ -331,6 +360,9 @@ private:
 	TPpPic iShown;               // the page on the screen
 	TPpPic iAhead;               // the next page, drawn ahead
 	TBool iToolbarShown;
+	TBool iKeepLog;              // (0.06) Tools > Keep a log
+	TBool iDiagOn;               // (0.06) Coda's debug mode (PsiDiag.on) at the start
+	TBool iLogOn;                // either: PsiPDF.log is written
 	TBool iBusy;
 	// find
 	TBuf<60> iFindText;
@@ -461,9 +493,10 @@ public:
 private:
 	void PreLayoutDynInitL()
 		{
+		// (fits the label's 40: "Wrong password for" and the quotes take 21)
 		TParsePtrC p(iFile);
 		TBuf<32> name;
-		Shorten(name, p.NameAndExt(), 28);
+		Shorten(name, p.NameAndExt(), 19);
 		TBuf<64> t;
 		t.Format(iAgain ? _L("Wrong password for \"%S\"") : _L("\"%S\" needs a password"), &name);
 		((CEikLabel*)Control(EPpDlgPasswordFile))->SetTextL(t);
@@ -636,10 +669,16 @@ void CPpAppUi::ConstructL()
 	iMaxBytes = KPpMaxBytes;
 	iWaiter = new(ELeave) CPsiBellWaiter(TCallBack(BellCallback, this));
 	iWatcher = new(ELeave) CPpWatcher(*this);
-	// the last session's log kept as PsiPDF.old
-	iCoeEnv->FsSession().Delete(KPpLogOld);
-	iCoeEnv->FsSession().Rename(KPpLog, KPpLogOld);
 	LoadSettings();
+	TEntry diag;
+	iDiagOn = iCoeEnv->FsSession().Entry(KPpDiagOn, diag) == KErrNone;
+	iLogOn = iKeepLog || iDiagOn;
+	// the last session's log kept as PsiPDF.old (when there is a log)
+	if (iLogOn)
+		{
+		iCoeEnv->FsSession().Delete(KPpLogOld);
+		iCoeEnv->FsSession().Rename(KPpLog, KPpLogOld);
+		}
 	RestoreRecogniser();
 	TRAPD(err, ButtonPictureL(EPpCmdPrev, EMbmPpPrev);
 		ButtonPictureL(EPpCmdNext, EMbmPpNext);
@@ -882,7 +921,7 @@ void CPpAppUi::EngineEnded()
 		DropPic(iAhead);
 		TBuf<100> why;
 		if (type == EExitPanic)
-			why.Format(_L("MuPDF stopped (%S %d) - the file may be damaged"), &cat, reason);
+			why = _L("MuPDF stopped - the file may be damaged");   // (the panic is in the log)
 		else
 			why = _L("MuPDF stopped - there may not be enough memory");
 		CannotShow(_L("Could not show this page"), why);
@@ -1288,7 +1327,13 @@ void CPpAppUi::PumpL()
 				return;
 				}
 			else
-				why.Format(_L("psipdf.exe did not start (%d) - install PsiPDF again"), err);
+				{
+				why = _L("psipdf.exe did not start - ");
+				why.Append(PsiErrWords(err));
+				TBuf<48> l;
+				l.Format(_L("engine: not started (%d)"), err);
+				Log(l);
+				}
 			CannotShow(_L("Could not show this page"), why);
 			}
 		return;
@@ -1482,6 +1527,16 @@ void CPpAppUi::OpenPdfL(const TDesC& aName)
 	TParse p;
 	if (p.Set(aName, NULL, NULL) != KErrNone)
 		return;
+	TEntry e;
+	TInt there = iCoeEnv->FsSession().Entry(p.FullName(), e);
+	if (there == KErrNotReady || there == KErrDisMounted)
+		{
+		// (the card it is on is out: said, the file shown stays)
+		TBuf<64> m;
+		PsiErrMsg(m, _L("Not opened"), KErrNotReady);
+		iEikonEnv->InfoMsg(m);
+		return;
+		}
 	Remember();
 	SaveSettings();
 	CloseDocument();
@@ -1540,7 +1595,9 @@ void CPpAppUi::CloseDocument()
 
 void CPpAppUi::OpenDoneL()
 	{
-	iPages = iS->pages;
+	// (the file's own count, from MuPDF: kept to what the dialogs and the
+	// toolbar's label can show)
+	iPages = iS->pages < 0 ? 0 : iS->pages > KPpMaxPages ? KPpMaxPages : iS->pages;
 	delete[] iSizes;
 	iSizes = NULL;
 	iSizes = new(ELeave) TInt[2 * iPages];
@@ -1802,7 +1859,7 @@ void CPpAppUi::UpdateLabelL()
 	CEikLabel* l = (CEikLabel*)iToolBar->ControlById(EPpCmdPageLabel);
 	if (!l)
 		return;
-	TBuf<24> t;
+	TBuf<32> t;
 	if (iOpen && iPages > 0)
 		t.Format(_L("Page %d\nof %d"), iPage + 1, iPages);
 	l->SetTextL(t);
@@ -2234,6 +2291,19 @@ void CPpAppUi::HandleCommandL(TInt aCommand)
 	case EPpCmdZoom150: SetZoomL(EZoom150); break;
 	case EPpCmdZoom200: SetZoomL(EZoom200); break;
 	case EPpCmdToolbar: ShowToolBarL(!iToolbarShown); break;
+	case EPpCmdKeepLog:
+		// (what is in PsiPDF.log already stays)
+		iKeepLog = !iKeepLog;
+		iLogOn = ETrue;
+		if (iKeepLog)
+			Log(_L("log: kept from here (Tools > Keep a log)"));
+		iLogOn = iKeepLog || iDiagOn;
+		SaveSettings();
+		iEikonEnv->InfoMsg(iKeepLog ? _L("Keeping a log") : _L("Not keeping a log"));
+		break;
+	case EPpCmdHelp:
+		PsiHelpL(KPpHelp, sizeof(KPpHelp) / sizeof(KPpHelp[0]), _L("Help on PsiPDF"), R_PSI_HELP_DIALOG);
+		break;
 	case EPpCmdAbout:
 		(new(ELeave) CPpAboutDialog)->ExecuteLD(R_PP_ABOUT_DIALOG);
 		break;
@@ -2269,6 +2339,8 @@ void CPpAppUi::DynInitMenuPaneL(TInt aMenuId, CEikMenuPane* aMenuPane)
 		aMenuPane->SetItemDimmed(EPpCmdZoomOut, !open);
 		aMenuPane->SetItemButtonState(EPpCmdToolbar, iToolbarShown ? EEikMenuItemSymbolOn : EEikMenuItemSymbolIndeterminate);
 		}
+	else if (aMenuId == R_PP_TOOLS_MENU)
+		aMenuPane->SetItemButtonState(EPpCmdKeepLog, iKeepLog ? EEikMenuItemSymbolOn : EEikMenuItemSymbolIndeterminate);
 	else if (aMenuId == R_PP_ZOOM_MENU)
 		{
 		static const TInt cmds[EZoomCount] = { EPpCmdFitWidth, EPpCmdFitPage, EPpCmdZoom100, EPpCmdZoom150, EPpCmdZoom200 };
@@ -2369,7 +2441,10 @@ void CPpAppUi::LoadSettings()
 		if (line == 0 && ln.Compare(_L8("PsiPDF 1")) != 0)
 			return;
 		if (line == 1)
+			{
 			iToolbarShown = ln.Length() == 0 || ln[0] != '0';
+			iKeepLog = ln.Length() >= 3 && ln[1] == ' ' && ln[2] == '1';   // (0.06: "1 1", toolbar and log)
+			}
 		if (line >= 2 && iRecentCount < KPpRecent)
 			{
 			TLex8 lex(ln);
@@ -2402,7 +2477,7 @@ void CPpAppUi::SaveSettings()
 	if (f.Replace(fs, KPpIniNew, EFileWrite) != KErrNone)
 		return;
 	TBuf8<300> b;
-	b.Format(_L8("PsiPDF 1\r\n%d\r\n"), iToolbarShown ? 1 : 0);
+	b.Format(_L8("PsiPDF 1\r\n%d %d\r\n"), iToolbarShown ? 1 : 0, iKeepLog ? 1 : 0);
 	TInt r = f.Write(b);
 	for (TInt i = 0; i < iRecentCount && r == KErrNone; i++)
 		{
@@ -2626,6 +2701,10 @@ void CPpAppUi::TellShort()
 
 void CPpAppUi::Log(const TDesC& aText)
 	{
+	// (0.06) only with Tools > Keep a log ticked, or Coda's debug mode on:
+	// it was written on every page of every session
+	if (!iLogOn)
+		return;
 	RFs& fs = iCoeEnv->FsSession();
 	RFile f;
 	if (f.Open(fs, KPpLog, EFileWrite | EFileShareAny) != KErrNone)
