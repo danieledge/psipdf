@@ -60,11 +60,30 @@
 #include <psipdf.rsg>
 #include "psipdf.hrh"
 #include "psimem.h"                  // core/ssh: short of memory, what the programs say to each other
+// (0.07) PsiHub 0.62's Free memory dialog: its word and the answers
+// (psion-netbook's psisys/psimem.h), here until core's psimem.h has them
+#ifndef KPsiMemSleepNow
+#define KPsiMemSleepNow _L8("sleepnow")
+#define KPsiMemSlept  _L8("slept")
+#define KPsiMemCannot _L8("cannot")
+static TBool PsiMemAnswer(RWsSession& aWs, TUint aUid, const TDesC8& aWord, const TDesC& aWhy)
+	{
+	TBuf8<96> m(aWord);
+	m.AppendFormat(_L8(" %08x"), aUid);
+	if (aWhy.Length())
+		{
+		m.Append(' ');
+		for (TInt i = 0; i < aWhy.Length() && m.Length() < m.MaxLength(); i++)
+			m.Append((TUint8)aWhy[i]);
+		}
+	return PsiMemTell(aWs, m);
+	}
+#endif
 #include "psihelp.h"                 // Tools > Help on PsiPDF (Coda's Help dialog)
 #include "psierr.h"                  // an error as words for a message
 
 const TUid KUidPsiPdf = { 0x01000AD8 };
-_LIT(KPpVersion, "0.06");
+_LIT(KPpVersion, "0.07");
 _LIT(KPpIni, "C:\\System\\Apps\\PsiPDF\\PsiPDF.ini");
 _LIT(KPpLog, "C:\\System\\Apps\\PsiPDF\\PsiPDF.log");
 _LIT(KPpLogOld, "C:\\System\\Apps\\PsiPDF\\PsiPDF.old");
@@ -2657,6 +2676,31 @@ void CPpAppUi::ProcessMessageL(TUid aUid, const TDesC8& aParams)
 	if (aUid.iUid != KPsiMemMsgUid)
 		{
 		CEikAppUi::ProcessMessageL(aUid, aParams);
+		return;
+		}
+	// (0.07) "sleepnow": PsiHub's Free memory dialog, "Put PsiPDF to sleep"
+	// ticked (it offers it only behind another program); answered, with
+	// why not in words if not
+	if (aParams == KPsiMemSleepNow)
+		{
+		TBuf<48> why;
+		if (iAsleep && !iRunning)
+			;                                // (asleep already)
+		else if (iForeground)
+			why.Copy(_L("it is in use"));
+		else if (!iRunning)
+			why.Copy(_L("its engine has stopped"));
+		else if (!iOpen)
+			why.Copy(_L("no file is open"));
+		else if (iOpenPending || iReopening)
+			why.Copy(_L("a file is still opening"));
+		else
+			IdleStop(ETrue);
+		if (!why.Length() && !iAsleep)
+			why.Copy(_L("its engine did not stop"));
+		if (why.Length())
+			Trim();
+		PsiMemAnswer(iCoeEnv->WsSession(), KUidPsiPdf.iUid, why.Length() ? KPsiMemCannot : KPsiMemSlept, why);
 		return;
 		}
 	if (aParams == KPsiMemSleep && !iForeground && iRunning && iOpen && !iOpenPending && !iReopening)
