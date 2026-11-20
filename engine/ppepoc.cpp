@@ -40,9 +40,11 @@ static TBool OverLimit()
 	return gHeapLimit > 0 && User::Heap().Size() > gHeapLimit;
 	}
 
+// (0.08) PP_SYS_REFUSE (ppcore.h) compares unsigned: "(TInt)n >
+// gHeapLimit" let 2^31 and more through to User::Alloc, which panicked
 void* pp_sys_malloc(unsigned int n)
 	{
-	if (gHeapLimit > 0 && (TInt)n > gHeapLimit)
+	if (PP_SYS_REFUSE(n, gHeapLimit))
 		return NULL;
 	void* p = User::Alloc(n);
 	if (p && OverLimit())
@@ -60,11 +62,11 @@ void pp_sys_free(void* p)
 
 void* pp_sys_realloc(void* p, unsigned int n)
 	{
-	if (gHeapLimit > 0 && (TInt)n > gHeapLimit)
+	if (PP_SYS_REFUSE(n, gHeapLimit))
 		return NULL;
 	TInt had = User::AllocLen(p);
 	void* q = User::ReAlloc(p, n);
-	if (q == p && OverLimit() && (TInt)n > had)
+	if (q == p && OverLimit() && n > (TUint)had)
 		{
 		// (grown in place past the limit: back to its old size, which
 		// neither moves nor fails; moved, the old block is already free

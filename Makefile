@@ -36,7 +36,7 @@ FTDEFS  := -DFT2_BUILD_LIBRARY '-DFT_CONFIG_MODULES_H="slimftmodules.h"' '-DFT_C
 
 ifeq ($(TARGET),host)
 CC      := gcc
-CFLAGS  := -O2 -g -w -std=gnu99 -fcommon -fno-strict-aliasing
+CFLAGS  := -O2 -g -w -std=gnu99 -fcommon -fno-strict-aliasing $(HOSTX)
 else
 SDK     ?= $(PSION_SDK)
 E       := $(SDK)/epoc_cpp_sdk/epoc32
@@ -88,6 +88,15 @@ $(O)/pdf/pdf-font.o: CFLAGS += -Dfz_new_font_from_memory=pp_new_font_from_memory
 $(O)/pdf/%.o: $(MU)/source/pdf/%.c
 	@mkdir -p $(dir $@)
 	$(CC) -c $(CFLAGS) $(MUDEFS) $< -o $@
+# (0.08) three of MuPDF's files with the limits later MuPDF has, for a
+# hostile PDF (tools/mupatch.py): compiled from copies in build/gen/mu
+MU_PATCHED := pdf-xref pdf-shade pdf-function
+$(GEN)/mu/%.c: $(MU)/source/pdf/%.c tools/mupatch.py
+	@mkdir -p $(dir $@)
+	python3 tools/mupatch.py pdf/$* $< $@
+$(addprefix $(O)/pdf/,$(MU_PATCHED:=.o)): $(O)/pdf/%.o: $(GEN)/mu/%.c
+	@mkdir -p $(dir $@)
+	$(CC) -c $(CFLAGS) $(MUDEFS) $< -o $@
 $(O)/pdf/%.o: $(MU)/source/pdf/js/%.c
 	@mkdir -p $(dir $@)
 	$(CC) -c $(CFLAGS) $(MUDEFS) $< -o $@
@@ -117,6 +126,14 @@ $(O)/z/%.o: $(CORE)/ssh/zlib/%.c
 ifeq ($(TARGET),host)
 $(O)/pphost: $(MU_OBJS) $(PP_OBJS) host/pphost.c
 	$(CC) $(CFLAGS) -Iengine -o $@ host/pphost.c $(PP_OBJS) $(MU_OBJS) -lm
+# (0.08) the allocator and picture budget with a hostile PDF's sizes
+# (test/alloctest.c, ppcore.c compiled into it), then the hostile files
+# themselves (test/crafted.py) through pphost
+alloctest: $(MU_OBJS) $(O)/pp/ppquant.o $(O)/pp/ppfont.o test/alloctest.c engine/ppcore.c engine/ppcore.h
+	$(CC) $(CFLAGS) $(MUDEFS) -Iengine -o $(O)/alloctest test/alloctest.c $(O)/pp/ppquant.o $(O)/pp/ppfont.o $(MU_OBJS) -lm
+	$(O)/alloctest
+hostile: alloctest $(O)/pphost
+	test/hostile.sh $(O)/pphost $(O)/hostile
 # ppbidi.c against ucdn, every character
 bidicheck: $(GEN)/ppbidi.h
 	$(CC) $(CFLAGS) -I$(GEN) -I$(MU)/source/fitz -o $(O)/bidicheck host/bidicheck.c engine/mu/ppbidi.c
@@ -144,4 +161,4 @@ $(O)/psipdf.exe: $(MU_OBJS) $(PP_OBJS) $(EPOC_OBJS) $(LIBGCC)
 	@ls -la $@
 endif
 
-.PHONY: all bidicheck
+.PHONY: all bidicheck alloctest hostile

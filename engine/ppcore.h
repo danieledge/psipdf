@@ -48,6 +48,17 @@ void pp_sys_free(void *p);
    left as it was) without memory */
 void *pp_sys_realloc(void *p, unsigned int n);
 
+/* (0.08) The most one block may be: a size the file gives is refused
+   above it before anything is added to it (the size word in front of each
+   block would wrap 0xFFFFFFF8 to 0). A refused block makes the file
+   damaged, not short of memory: no Psion has a gigabyte. */
+#define PP_BLOCK_MAX 0x3FFFFF00UL
+/* a block of n bytes the platform refuses: past PP_BLOCK_MAX, or past
+   limit (if limit > 0), compared unsigned (as a signed number, 2^31 and
+   more passed the test and User::Alloc panicked) */
+#define PP_SYS_REFUSE(n, limit) ((unsigned long)(n) > PP_BLOCK_MAX || \
+	((limit) > 0 && (unsigned long)(n) > (unsigned long)(limit)))
+
 /* MuPDF's cookie, shared with whoever may stop a job: abort (set to 1 to
    stop), progress. Laid out as fz_cookie (MuPDF 1.3). */
 typedef struct pp_cookie

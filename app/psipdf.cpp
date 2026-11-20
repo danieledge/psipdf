@@ -83,7 +83,7 @@ static TBool PsiMemAnswer(RWsSession& aWs, TUint aUid, const TDesC8& aWord, cons
 #include "psierr.h"                  // an error as words for a message
 
 const TUid KUidPsiPdf = { 0x01000AD8 };
-_LIT(KPpVersion, "0.07");
+_LIT(KPpVersion, "0.08");
 _LIT(KPpIni, "C:\\System\\Apps\\PsiPDF\\PsiPDF.ini");
 _LIT(KPpLog, "C:\\System\\Apps\\PsiPDF\\PsiPDF.log");
 _LIT(KPpLogOld, "C:\\System\\Apps\\PsiPDF\\PsiPDF.old");

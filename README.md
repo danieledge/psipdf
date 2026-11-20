@@ -87,6 +87,15 @@ The colours: error diffusion (Floyd-Steinberg, serpentine) to the nearest of EPO
 
 MuPDF 1.3 (August 2013) is the last version that is plain C with no HarfBuzz, which the SDK's gcc 3.0 builds with `-std=gnu99`. The port's shims are in `engine/mu/`: single-precision maths over EPOC's double functions, `float.h`, `snprintf` (psion-core's), and stubs for the parts left out.
 
+Files from anywhere. A PDF can be made to break the program that reads it, and MuPDF 1.3 is old, so (0.08):
+- MuPDF runs in the engine, its own process: whatever a file does to it, PsiPDF itself carries on and says the file could not be shown.
+- JBIG2, JPEG 2000, PNG and TIFF pictures, JavaScript, XPS and forms are not built in at all.
+- Every block MuPDF asks for goes through PsiPDF's counted allocator: a size from the file of more than a gigabyte is refused before anything is added to it (and the file is "damaged"), and the engine's own limit, the memory free when a page began, is compared unsigned. A size near 4 GB used to wrap to a tiny block, and one over 2 GB stopped the engine.
+- The picture budget is worked out by division, so a picture of 65536 x 32768 pixels is reduced like any other big one (its size in bytes, 2^32, was kept as 0 and the picture decoded whole).
+- Three of MuPDF's files are built from copies with the limits later MuPDF has (`tools/mupatch.py`, applied in `build/gen/mu/`; `third/mupdf` stays as fetched): object numbers up to 8,388,607 in the xref tables and streams, no more objects in an object stream than the file has, at most 32 colours in a mesh shading's `/Decode`, and a sampled function's size checked as it is multiplied.
+- MuPDF itself already refuses pictures over 65536 pixels a side or 16 bits a component, and nests no deeper than its 256-level error stack.
+- Still exposed: the rest of MuPDF 1.3's PDF parser, its fonts (FreeType 2.4.11, 2012) and libjpeg 9 (2013) parse whatever the file holds, with the faults found in them since 2013 that this list does not name. Moving to a newer MuPDF is the real fix, but the newer ones bring HarfBuzz (above).
+
 ## What it does not do yet
 
 - **Not tested:** encrypted files other than 128-bit RC4 (AES, and revisions 5 and 6), Type 3 fonts, shadings (gradients), transparency groups, CMYK and ICC colours, very long documents (hundreds of pages), progressive JPEGs, and any real netBook or 5mx: only the emulators.
@@ -111,7 +120,7 @@ python3 pkg/mkicon.py build/pkg core
 core/tools/docker/psibuild "bash build.sh sis"   # dist/PsiPDF.sis
 ```
 
-MuPDF's source is never in this repository: `fetch.sh` downloads the official release (`mupdf-1.3-source.tar.gz` from mupdf.com) and checks its SHA-256 before use. PsiPDF does not change MuPDF's files; it builds the ones it needs (the `Makefile` lists those left out) and adds its own in `engine/`.
+MuPDF's source is never in this repository: `fetch.sh` downloads the official release (`mupdf-1.3-source.tar.gz` from mupdf.com) and checks its SHA-256 before use. PsiPDF does not change MuPDF's files; it builds the ones it needs (the `Makefile` lists those left out), three of them from patched copies made at build time (`tools/mupatch.py`, above), and adds its own in `engine/`.
 
 `make TARGET=host` builds `build/host/pphost` (and `build/gen/PsiPDF.fnt`), the same engine on a PC: it draws pages exactly as the Psion does, into PPM pictures in the screen's colours, with the times and memory (run it with no arguments for its options).
 
@@ -119,6 +128,7 @@ MuPDF's source is never in this repository: `fetch.sh` downloads the official re
 
 - `test/mkpdfs.py OUTDIR --coda FILE --photo FILE.jpg` makes the test files: a page from Coda's Print to PDF, a two-column text page in embedded TrueType fonts, a photo page, a 12-page document and one with a password ("psion").
 - `test/mkbig.py OUTDIR` makes the memory tests: a 300 dpi A4 scan at 1 and 8 bits a pixel, and a page too big for any bitmap. On the PC, `build/host/pphost` prints each page's heap peak (0.06: about 1 MB for the scans, 18.7 and 26 MB before). In the netBook emulator, 0.05 said "Not enough memory" for both scans and 0.06 shows them (`docs/img/2026-11-19-memory/`: the scan and the huge page before and after, and a page stopped with Esc).
+- `make TARGET=host hostile` (0.08): `test/alloctest.c` runs the engine's allocator and picture budget with the sizes a hostile file can give (ppcore.c is compiled into it), then `test/hostile.sh` opens the files `test/crafted.py` makes (an object stream of 1,073,741,822 or 600,000,000 objects, xref streams with a huge `/Size` or `/Index`, a 65536 x 32768 picture, a mesh shading with 1000 numbers in `/Decode`, a sampled function whose size wraps) with blocks limited to 16 MB as on the Psion (`pphost -L`). Each ends with an error or a page, never a crash; with 0.07 three of them crashed the engine on the PC, and two more asked for over 2 GB, which stops it on the Psion.
 - **netBook emulator:** the emulator does not mount the card, so `test/emu/nbimage.mts` puts PsiPDF in the ROM of a scratch test image with its engine in parts, which a test launcher joins on C: at boot (PsiPDF looks for its engine in `\System\Apps\PsiPDF\` on every disk). `test/emu/run.sh` runs a script of keys and taps (`test/emu/emu.py`) and keeps PsiPDF's log. This needs the Coda image tools.
 - **Series 5mx emulator:** `node --experimental-strip-types core/tools/emu/mkcard.ts psipdf` makes a card with PsiPDF installed on it (`test/emu/psipdf.card.ts`); then `core/tools/emu/run.sh`.
 

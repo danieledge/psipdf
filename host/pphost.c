@@ -3,13 +3,14 @@
  * PPM pictures in the screen's colours, with the times and heap.
  *
  *   pphost [-w WIDTH | -s SCALE] [-d 8|4] [-b BAND] [-p FIRST[-LAST]]
- *          [-f TEXT] [-P PASSWORD] [-S KB] [-F FONTFILE] OUTPREFIX FILE.pdf
+ *          [-f TEXT] [-P PASSWORD] [-S KB] [-F FONTFILE] [-L KB] OUTPREFIX FILE.pdf
  *
  * -w: fitted to WIDTH pixels (standard 640, the screen); -s: pixels a point;
  * -d 8: EPOC's 256 colours (the netBook), 4: 16 greys (the Series 5mx);
  * -f: find TEXT on each page and print the hits instead; -S: MuPDF's store
  * in KB (standard 1024); -F: the font file (standard: PsiPDF.fnt in
- * ../gen from this program, as the Makefile leaves it; "" for none).
+ * ../gen from this program, as the Makefile leaves it; "" for none);
+ * -L: no block bigger than KB (as psipdf.exe limits them to the memory free).
  * A font file that could not be used is said ("fonts: missing").
  *
  * Copyright (C) 2026 Dan Edge. AGPL-3.0-or-later: see LICENSE. */
@@ -25,9 +26,12 @@ long pp_ms(void)
 	gettimeofday(&tv, NULL);
 	return tv.tv_sec * 1000L + tv.tv_usec / 1000;
 }
-void *pp_sys_malloc(unsigned int n) { return malloc(n); }
+/* (0.08) the engine's own refusal (PP_SYS_REFUSE), with -L as the limit
+   psipdf.exe sets from the memory free (here a size per block) */
+static unsigned long sys_limit;
+void *pp_sys_malloc(unsigned int n) { return PP_SYS_REFUSE(n, sys_limit) ? NULL : malloc(n); }
 void pp_sys_free(void *p) { free(p); }
-void *pp_sys_realloc(void *p, unsigned int n) { return realloc(p, n); }
+void *pp_sys_realloc(void *p, unsigned int n) { return PP_SYS_REFUSE(n, sys_limit) ? NULL : realloc(p, n); }
 const char *pp_messages(void) { return ""; }
 
 typedef struct out
@@ -81,12 +85,13 @@ int main(int argc, char **argv)
 		case 'P': pw = v; break;
 		case 'S': store = atoi(v); break;
 		case 'F': fonts = v; break;
+		case 'L': sys_limit = strtoul(v, NULL, 10) * 1024; break;
 		default: fprintf(stderr, "unknown option %s\n", argv[i]); return 2;
 		}
 	}
 	if (i + 2 != argc)
 	{
-		fprintf(stderr, "usage: pphost [-w W | -s S] [-d 8|4] [-b BAND] [-p A[-B]] [-f TEXT] [-P PW] OUTPREFIX FILE.pdf\n");
+		fprintf(stderr, "usage: pphost [-w W | -s S] [-d 8|4] [-b BAND] [-p A[-B]] [-f TEXT] [-P PW] [-S KB] [-F FONTS] [-L KB] OUTPREFIX FILE.pdf\n");
 		return 2;
 	}
 	if (!fonts)

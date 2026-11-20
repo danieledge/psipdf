@@ -15,6 +15,7 @@ typedef struct pp_heap
 {
 	unsigned long now, peak;
 	int failed;             /* an allocation failed since this was cleared */
+	int toobig;             /* (0.08) ...one past PP_BLOCK_MAX: the file is damaged */
 } pp_heap;
 
 typedef struct pp_cached
@@ -41,10 +42,24 @@ struct pp_doc
 
 /* ---- the counted allocator: a size word before each block ---- */
 
+/* (0.08) a size from the file past PP_BLOCK_MAX, refused before the size
+   word is added to it */
+static int pp_too_big(pp_heap *h, unsigned int size)
+{
+	if ((unsigned long)size <= PP_BLOCK_MAX)
+		return 0;
+	h->toobig = 1;
+	h->failed = 1;
+	return 1;
+}
+
 static void *pp_malloc(void *user, unsigned int size)
 {
 	pp_heap *h = (pp_heap *)user;
-	unsigned long *p = (unsigned long *)pp_sys_malloc(size + 2 * sizeof(unsigned long));
+	unsigned long *p;
+	if (pp_too_big(h, size))
+		return NULL;
+	p = (unsigned long *)pp_sys_malloc(size + 2 * sizeof(unsigned long));
 	if (!p)
 	{
 		h->failed = 1;
@@ -80,6 +95,8 @@ static void *pp_realloc(void *user, void *old, unsigned int size)
 		pp_free(user, old);
 		return NULL;
 	}
+	if (pp_too_big((pp_heap *)user, size))
+		return NULL;
 	/* (0.06) the system's own reallocation, which grows a block where it
 	   is when it can: a copy every time made a 3 MB stream need 6 to 9 MB */
 	p = (unsigned long *)old - 2;
@@ -123,6 +140,8 @@ static int caught(pp_doc *d, int otherwise, char *msg, int len)
 {
 	const char *m = fz_caught_message(d->ctx);
 	copy_msg(msg, len, m && *m ? m : "failed");
+	if (d->heap.toobig)
+		return otherwise;
 	if (d->heap.failed || (m && (strstr(m, "malloc") || strstr(m, "out of memory") || strstr(m, "cannot allocate"))))
 		return PP_E_MEMORY;
 	return otherwise;
@@ -322,10 +341,25 @@ static fz_pixmap *pp_get_reduced(fz_context *ctx, fz_image *im, int w, int h)
 	return tile;
 }
 
+/* (0.08) w x h pixels of n + 1 bytes are more than budget: by division, as
+   the product of a 65536 x 32768 picture's is 2^32, which 32 bits kept as 0 */
+static int pp_over_budget(int w, int h, int n, unsigned int budget)
+{
+	unsigned int px;
+	if (w <= 0 || h <= 0)
+		return 0;
+	if (n < 0)
+		n = 0;
+	px = (unsigned int)n + 1;
+	if ((unsigned int)w > budget / px)
+		return 1;
+	return (unsigned int)h > budget / ((unsigned int)w * px);
+}
+
 static fz_pixmap *pp_get_pixmap(fz_context *ctx, fz_image *im, int w, int h)
 {
 	int k = 0;
-	while (k < 8 && (unsigned int)(im->w >> k) * (unsigned int)(im->h >> k) * (unsigned int)(im->n + 1) > pp_image_budget)
+	while (k < 8 && pp_over_budget(im->w >> k, im->h >> k, im->n, pp_image_budget))
 		k++;
 	if (k > 0)
 	{
@@ -573,7 +607,7 @@ pp_doc *pp_open(const char *path, const char *password, unsigned int store, int 
 	fz_catch(d->ctx)
 	{
 		const char *m = fz_caught_message(d->ctx);
-		*err = d->heap.failed ? PP_E_MEMORY : (m && strstr(m, "cannot open")) ? PP_E_OPEN : PP_E_DAMAGED;
+		*err = d->heap.toobig ? PP_E_DAMAGED : d->heap.failed ? PP_E_MEMORY : (m && strstr(m, "cannot open")) ? PP_E_OPEN : PP_E_DAMAGED;
 		copy_msg(msg, msglen, m);
 		fz_free_context(d->ctx);
 		pp_font_reset();
@@ -736,6 +770,7 @@ int pp_page_size(pp_doc *d, int n, float *w, float *h)
 	if (n < 0 || n >= d->pages)
 		return PP_E_ARGS;
 	d->heap.failed = 0;
+	d->heap.toobig = 0;
 	fz_try(d->ctx)
 	{
 		pp_cached *c = get_page(d, n);
@@ -838,6 +873,7 @@ int pp_render(pp_doc *d, int n, float scale, int depth, int band,
 	if (n < 0 || n >= d->pages || scale <= 0 || band <= 0)
 		return PP_E_ARGS;
 	d->heap.failed = 0;
+	d->heap.toobig = 0;
 	if (cookie)
 		cookie->errors = 0;
 	fz_try(ctx)
@@ -924,8 +960,9 @@ int pp_render(pp_doc *d, int n, float scale, int depth, int band,
 		   memory say: the page is all there but for it) */
 		if (cookie && cookie->errors)
 		{
-			copy_msg(msg, msglen, d->heap.failed ? "not enough memory for all of the page" : "part of the page could not be drawn");
-			r = d->heap.failed ? PP_E_MEMORY : PP_E_PAGE;
+			int mem = d->heap.failed && !d->heap.toobig;
+			copy_msg(msg, msglen, mem ? "not enough memory for all of the page" : "part of the page could not be drawn");
+			r = mem ? PP_E_MEMORY : PP_E_PAGE;
 		}
 	}
 	fz_always(ctx)
@@ -965,6 +1002,7 @@ int pp_find(pp_doc *d, int n, const char *needle, float *hits, int max, pp_cooki
 	if (n < 0 || n >= d->pages || max <= 0)
 		return PP_E_ARGS;
 	d->heap.failed = 0;
+	d->heap.toobig = 0;
 	fz_try(ctx)
 	{
 		pp_cached *c = get_page(d, n);
