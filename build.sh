@@ -78,7 +78,7 @@ echo "== PsiPDF.app"
 D=$B/app; rm -rf "$D"; mkdir -p "$D"
 # (this SDK's makmake has no SOURCEPATH, and every ptproj project shares one
 # object folder: the sources are copied together under names of their own)
-cp "$HERE"/app/* "$HERE/psipdf.h" "$HERE/engine/ppcore.h" "$CORE/ssh/psibell.h" "$CORE/ssh/psishared.h" "$CORE/ssh/psimem.h" "$D/"
+cp "$HERE"/app/* "$HERE/psipdf.h" "$HERE/engine/ppcore.h" "$CORE/ssh/psibell.h" "$CORE/ssh/psishared.h" "$CORE/ssh/psimem.h" "$CORE/ssh/psimemlvl.h" "$D/"
 sed -i 's#"engine/ppcore.h"#"ppcore.h"#' "$D/psipdf.h"
 link psipdf "$D"
 mmp psipdf psipdf psipdf.app app

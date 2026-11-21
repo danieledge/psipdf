@@ -142,6 +142,20 @@ extern "C" int PpRow(void* aUser, int aY, const unsigned char* aData, int aBytes
 	return e.iS->cookie.abort || *e.iGone != KRequestPending ? 1 : 0;
 	}
 
+// (0.10) the engine's heap cells before its first file, and the most a
+// closed file may leave above it (MuPDF's own small state): more means
+// blocks lost on an earlier unwind (an out-of-memory or damaged file), which
+// nothing counts any more once the document has gone; the app then starts
+// the engine afresh before the next file
+static TInt gBaseCells = -1;
+const TInt KPpStaleCells = 32;
+
+static void CheckStale(PpShared* s)
+	{
+	if (gBaseCells >= 0 && User::Heap().Count() > gBaseCells + KPpStaleCells)
+		s->stale = 1;
+	}
+
 static void DoOpen(TPpEngine& e)
 	{
 	PpShared* s = e.iS;
@@ -155,7 +169,10 @@ static void DoOpen(TPpEngine& e)
 			{
 			pp_close(e.iDoc);
 			e.iDoc = NULL;
+			CheckStale(s);
 			}
+		if (gBaseCells < 0)
+			gBaseCells = User::Heap().Count();
 		unsigned int store = (s->store_kb > 0 ? s->store_kb : 1024) * 1024u;
 		e.iDoc = pp_open(s->path, s->text, store, &err, s->msg, sizeof(s->msg));
 		Copy(e.iPath, sizeof(e.iPath), s->path);
@@ -289,7 +306,10 @@ static void Do(TPpEngine& e)
 	case PP_CMD_FIND: DoFind(e); break;
 	case PP_CMD_CLOSE:
 		if (e.iDoc)
+			{
 			pp_close(e.iDoc);
+			CheckStale(s);
+			}
 		e.iDoc = NULL;
 		s->result = PP_OK;
 		break;

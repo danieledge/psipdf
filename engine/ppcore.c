@@ -855,7 +855,7 @@ static fz_display_list *get_list(pp_doc *d, pp_cached *c, pp_cookie *cookie)
 	return list;
 }
 
-int pp_render(pp_doc *d, int n, float scale, int depth, int band,
+static int pp_render_once(pp_doc *d, int n, float scale, int depth, int band,
 	pp_row_fn row, void *user, pp_cookie *cookie, pp_stats *st, char *msg, int msglen)
 {
 	fz_context *ctx = d->ctx;
@@ -989,6 +989,28 @@ int pp_render(pp_doc *d, int n, float scale, int depth, int band,
 	st->heap_now = pp_heap_now(d);
 	st->heap_peak = pp_heap_peak(d);
 	return r;
+}
+
+/* (0.10) A page that runs out of memory is tried once more, after what
+   can be made again is let go: the other pages kept with their display
+   lists, the decoded pictures, the glyphs and the standard fonts not in use
+   (what pp_trim lets go, and this page's pictures too). Until now they
+   were let go only when the program that watches the memory asked, and
+   the page was refused while they were still held. The rows already handed
+   over are written again from the top. */
+int pp_render(pp_doc *d, int n, float scale, int depth, int band,
+	pp_row_fn row, void *user, pp_cookie *cookie, pp_stats *st, char *msg, int msglen)
+{
+	int i, r = pp_render_once(d, n, scale, depth, band, row, user, cookie, st, msg, msglen);
+	if (r != PP_E_MEMORY || d->heap.toobig || (cookie && cookie->abort) || d->locked)
+		return r;
+	for (i = 0; i < PP_CACHE; i++)
+		if (d->cache[i].n != n)
+			drop_cached(d, &d->cache[i]);
+	drop_pictures(d->ctx);
+	fz_purge_glyph_cache(d->ctx);
+	pp_font_sweep();
+	return pp_render_once(d, n, scale, depth, band, row, user, cookie, st, msg, msglen);
 }
 
 int pp_find(pp_doc *d, int n, const char *needle, float *hits, int max, pp_cookie *cookie)

@@ -60,30 +60,12 @@
 #include <psipdf.rsg>
 #include "psipdf.hrh"
 #include "psimem.h"                  // core/ssh: short of memory, what the programs say to each other
-// (0.07) PsiHub 0.62's Free memory dialog: its word and the answers
-// (psion-netbook's psisys/psimem.h), here until core's psimem.h has them
-#ifndef KPsiMemSleepNow
-#define KPsiMemSleepNow _L8("sleepnow")
-#define KPsiMemSlept  _L8("slept")
-#define KPsiMemCannot _L8("cannot")
-static TBool PsiMemAnswer(RWsSession& aWs, TUint aUid, const TDesC8& aWord, const TDesC& aWhy)
-	{
-	TBuf8<96> m(aWord);
-	m.AppendFormat(_L8(" %08x"), aUid);
-	if (aWhy.Length())
-		{
-		m.Append(' ');
-		for (TInt i = 0; i < aWhy.Length() && m.Length() < m.MaxLength(); i++)
-			m.Append((TUint8)aWhy[i]);
-		}
-	return PsiMemTell(aWs, m);
-	}
-#endif
+                                     // (0.10: its words and PsiMemAnswer from core, no copy here)
 #include "psihelp.h"                 // Tools > Help on PsiPDF (Coda's Help dialog)
 #include "psierr.h"                  // an error as words for a message
 
 const TUid KUidPsiPdf = { 0x01000AD8 };
-_LIT(KPpVersion, "0.09");
+_LIT(KPpVersion, "0.10");
 _LIT(KPpIni, "C:\\System\\Apps\\PsiPDF\\PsiPDF.ini");
 _LIT(KPpLog, "C:\\System\\Apps\\PsiPDF\\PsiPDF.log");
 _LIT(KPpLogOld, "C:\\System\\Apps\\PsiPDF\\PsiPDF.old");
@@ -268,6 +250,7 @@ private:
 	void CloseDocument();
 	void OpenDoneL();
 	static TInt AskPasswordCallback(TAny* aSelf);
+	static TInt StopIdleCallback(TAny* aSelf);
 	void AskPasswordL();
 	// pages
 	TBool SizeKnown(TInt aPage) const { return iSizes && iSizes[2 * aPage] > 0; }
@@ -325,8 +308,12 @@ private:
 	TInt FreeRamKb() const;
 	static TInt IdleStopCallback(TAny* aSelf);
 	void IdleStop(TBool aAsked = EFalse);
+	void DoCommandL(TInt aCommand);
+	static void CommandDone(TAny* aSelf);
 private:
 	CPpView* iView;
+	RChunk iMemChunk;            // (0.10) registered with the memory watcher (psimemlvl.h)
+	TInt iCommands;              // (0.10) commands running (a dialog up): busy
 	// the engine
 	RChunk iChunk;
 	TBool iChunkOpen;
@@ -379,6 +366,7 @@ private:
 	TPoint iOrigin;              // the view's top left on the page as drawn
 	TBool iAtFoot;               // show the foot of the page when it comes
 	TBool iKeepCentre;           // a new zoom: keep what was in the middle
+	TBool iKeepOrigin;           // (0.10) the page dropped asleep: drawn again where it was
 	TInt iCentreX, iCentreY;     // ...as a part of the page (x 10000)
 	TPpPic iShown;               // the page on the screen
 	TPpPic iAhead;               // the next page, drawn ahead
@@ -707,6 +695,7 @@ void CPpWatcher::RunL()
 
 CPpAppUi::~CPpAppUi()
 	{
+	PsiMemUnregister(iMemChunk, KUidPsiPdf.iUid);
 	StopEngine();
 	delete iIdle;
 	delete iSoon;
@@ -778,6 +767,9 @@ void CPpAppUi::ConstructL()
 	TBuf<80> l;
 	l.Format(_L("PsiPDF %S, screen %d bits, %d pixels an inch"), &KPpVersion, iMode == EColor256 ? 8 : 4, iPxPerInch);
 	Log(l);
+	// (0.10) on the memory watcher's list (psimemlvl.h): PsiPDF takes
+	// "trim" and "sleep" (ProcessMessageL), and says when it is busy
+	PsiMemRegister(iMemChunk, KUidPsiPdf.iUid);
 	}
 
 // The System screen (or PsiHub) starts PsiPDF with a file's name; started
@@ -1228,6 +1220,10 @@ void CPpAppUi::JobDoneL(TInt aCmd)
 			iFile.Zero();
 			iEikonEnv->Process()->SetMainDocFileName(_L("PsiPDF"));
 			UpdateLabelL();
+			// (0.10) nothing open: the engine (1.1 MB of code and its heap)
+			// is not kept waiting; the next file starts it again
+			iIdle->Cancel();
+			iIdle->Start(TCallBack(StopIdleCallback, this));
 			break;
 			}
 		OpenDoneL();
@@ -1478,6 +1474,15 @@ void CPpAppUi::PumpL()
 		}
 	if (iReopening)
 		return;
+	if (iOpenPending && s->stale)
+		{
+		// (0.10) the last file closed left memory behind in the engine:
+		// started afresh for this one
+		Log(_L("engine: started again (a closed file left memory behind)"));
+		StopEngine();
+		Pump();
+		return;
+		}
 	if (iOpenPending)
 		{
 		iOpenPending = EFalse;
@@ -1570,9 +1575,10 @@ void CPpAppUi::PumpL()
 				iOrigin.iX = (TInt)((TInt64(was.iX + view.iWidth / 2) * now.iWidth / old.iWidth).GetTInt()) - view.iWidth / 2;
 				iOrigin.iY = (TInt)((TInt64(was.iY + view.iHeight / 2) * now.iHeight / old.iHeight).GetTInt()) - view.iHeight / 2;
 				}
-			else if (!samePage)
+			else if (!samePage && !iKeepOrigin)
 				iOrigin.iY = iAtFoot ? now.iHeight : 0;
 			iKeepCentre = EFalse;
+			iKeepOrigin = EFalse;
 			iAtFoot = EFalse;
 			ClampOrigin();
 			s->page = iPage;
@@ -1719,6 +1725,19 @@ TInt CPpAppUi::AskPasswordCallback(TAny* aSelf)
 	return 0;
 	}
 
+// (0.10) an open that failed, or a password not given: the engine stopped
+// while no file is open or asked for
+TInt CPpAppUi::StopIdleCallback(TAny* aSelf)
+	{
+	CPpAppUi* ui = (CPpAppUi*)aSelf;
+	if (ui->iRunning && !ui->iOpen && !ui->iOpenPending && !ui->iJob)
+		{
+		ui->StopEngine();
+		ui->Log(_L("engine: stopped (no file open)"));
+		}
+	return 0;
+	}
+
 void CPpAppUi::AskPasswordL()
 	{
 	TBuf<64> pw;
@@ -1737,6 +1756,9 @@ void CPpAppUi::AskPasswordL()
 		iEikonEnv->Process()->SetMainDocFileName(_L("PsiPDF"));
 		UpdateLabelL();
 		iView->DrawNow();
+		// (0.10) the locked file was left open in the engine, with the
+		// engine running for nothing
+		StopIdleCallback(this);
 		}
 	}
 
@@ -2389,7 +2411,25 @@ void CPpAppUi::DetailsL()
 	d->ExecuteLD(R_PP_DETAILS_DIALOG);
 	}
 
+// (0.10) while a command runs (a dialog up) PsiPDF is busy for the memory
+// watcher: not put to sleep or closed then
 void CPpAppUi::HandleCommandL(TInt aCommand)
+	{
+	if (!iCommands++)
+		PsiMemBusy(iMemChunk, KUidPsiPdf.iUid, ETrue);
+	CleanupStack::PushL(TCleanupItem(CommandDone, this));
+	DoCommandL(aCommand);
+	CleanupStack::PopAndDestroy();
+	}
+
+void CPpAppUi::CommandDone(TAny* aSelf)
+	{
+	CPpAppUi* ui = (CPpAppUi*)aSelf;
+	if (!--ui->iCommands)
+		PsiMemBusy(ui->iMemChunk, KUidPsiPdf.iUid, EFalse);
+	}
+
+void CPpAppUi::DoCommandL(TInt aCommand)
 	{
 	switch (aCommand)
 		{
@@ -2760,9 +2800,11 @@ TInt CPpAppUi::IdleStopCallback(TAny* aSelf)
 	}
 
 // PsiPDF behind for KPpIdleStop with a file open: the engine stopped (its
-// code, MuPDF's heap and the page drawn ahead given back). The page on the
-// screen stays, with its page, zoom and Find's hits; coming back opens the
-// file again (HandleForegroundEventL, then PumpL).
+// code, MuPDF's heap and the page drawn ahead given back). (0.10) The page's
+// bitmap goes too: it was kept, 0.5 MB fitted to the screen and up to 6 MB at
+// 200%, for as long as PsiPDF stayed behind. Its page, zoom, place and Find's
+// hits stay; coming back opens the file again (HandleForegroundEventL, then
+// PumpL) and draws the page where it was.
 void CPpAppUi::IdleStop(TBool aAsked)
 	{
 	if (iForeground || !iRunning || !iOpen || iOpenPending || iReopening)
@@ -2773,8 +2815,10 @@ void CPpAppUi::IdleStop(TBool aAsked)
 	iFindPending = 0;
 	BusyEnd();
 	DropPic(iAhead);
-	if (!iShown.iDone || iShown.iFailed)
-		DropPic(iShown);             // (half a page: drawn again when back)
+	if (iShown.iBmp && iShown.iPage == iPage)
+		iKeepOrigin = ETrue;
+	DropPic(iShown);
+	iView->DrawNow();
 	iAsleep = ETrue;
 	iReopen = iReopening = EFalse;
 	iIdleStopper->Cancel();
