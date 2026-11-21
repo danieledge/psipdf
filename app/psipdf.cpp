@@ -62,10 +62,10 @@
 #include "psimem.h"                  // core/ssh: short of memory, what the programs say to each other
                                      // (0.10: its words and PsiMemAnswer from core, no copy here)
 #include "psihelp.h"                 // Tools > Help on PsiPDF (Coda's Help dialog)
-#include "psierr.h"                  // an error as words for a message
+#include "psierr.h"                  // an error as words for a message (0.12: psion-core's, build.sh copies it)
 
 const TUid KUidPsiPdf = { 0x01000AD8 };
-_LIT(KPpVersion, "0.11");
+_LIT(KPpVersion, "0.12");
 _LIT(KPpIni, "C:\\System\\Apps\\PsiPDF\\PsiPDF.ini");
 _LIT(KPpLog, "C:\\System\\Apps\\PsiPDF\\PsiPDF.log");
 _LIT(KPpLogOld, "C:\\System\\Apps\\PsiPDF\\PsiPDF.old");
@@ -1427,8 +1427,8 @@ void CPpAppUi::PumpL()
 				}
 			else
 				{
-				why = _L("PsiPDF cannot start drawing - ");
-				why.Append(PsiErrWords(err));
+				why = _L("PsiPDF cannot start drawing");
+				PsiErrTail(why, err);       // (0.12: nothing more when the reason is not known)
 				TBuf<48> l;
 				l.Format(_L("engine: not started (%d)"), err);
 				Log(l);
