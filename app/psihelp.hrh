@@ -1,7 +1,9 @@
 // (one copy, kept the same in every Coda program: psion-netbook psisys/ is the master)
 // psihelp.hrh: the control ids of the Help dialog (psihelp.h, psihelp.rssi)
+// and its text's control type
 #ifndef PSIHELP_HRH
 #define PSIHELP_HRH
 #define EPsiHelpTopic 0x7e01
 #define EPsiHelpText  0x7e02
+#define EPsiCtHelpBox 0x7e03   // the text's line: a custom control (CPsiHelpBox, psihelp.h)
 #endif

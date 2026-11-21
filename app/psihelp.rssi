@@ -5,12 +5,14 @@
 //   #include "psihelp.hrh"   (with the program's .hrh)
 //   #include "psihelp.rssi"  (at the end)
 // The title ("Help on PsiFiles") is set at run time. A fixed size, as
-// PsiMail's, PsiTerm's and PsiLinux's Help: 520 px wide, 7 lines on the
-// 5mx's 240 lines (r_psi_help_dialog), 12 on the netBook's 480
-// (r_psi_help_dialog_tall, chosen by PsiHelpL), each a whole number of
-// lines high, with a scroll bar (PsiPDF 0.09). A program that is only on
-// 480 lines may instead give PSIHELP_LINES 12 and PSIHELP_HEIGHT 204 before
-// the include and use r_psi_help_dialog alone.
+// PsiMail's, PsiTerm's and PsiLinux's Help: 520 px wide (the text and its
+// scroll bar), 7 whole lines on the 5mx's 240 lines, 12 on the netBook's
+// 480: the text's line (EPsiCtHelpBox, CPsiHelpBox in psihelp.h) sizes
+// itself by the screen and its own line height (21 November 2026), so the
+// two resources are now the same and PSIHELP_LINES / PSIHELP_HEIGHT no
+// longer change what is seen (kept, so the programs' .rss need not change).
+// The editor's resource stays RTXTED: its width is the text's beside the
+// bar, 495 (with the bar's 23 and the edges, the 520 the box always had).
 #include <eikedwin.hrh>     // (the editor's flags; #defines, safe to include twice)
 #ifndef PSIHELP_LINES
 #define PSIHELP_LINES 7
@@ -29,8 +31,8 @@ RESOURCE DIALOG r_psi_help_dialog
 		{
 		DLG_LINE { type=EEikCtChoiceList; prompt="Topic"; id=EPsiHelpTopic;
 			control=CHOICELIST { array_id=r_psi_help_empty; }; },
-		DLG_LINE { type=EEikCtRichTextEditor; prompt=""; id=EPsiHelpText;
-			control=RTXTED { width=520; height=PSIHELP_HEIGHT; numlines=PSIHELP_LINES; textlimit=6000; flags=EEikEdwinNoAutoSelection|EEikEdwinReadOnly; }; }
+		DLG_LINE { type=EPsiCtHelpBox; prompt=""; id=EPsiHelpText;
+			control=RTXTED { width=495; height=PSIHELP_HEIGHT; numlines=PSIHELP_LINES; textlimit=6000; flags=EEikEdwinNoAutoSelection|EEikEdwinReadOnly; }; }
 		};
 	}
 
@@ -43,8 +45,8 @@ RESOURCE DIALOG r_psi_help_dialog_tall
 		{
 		DLG_LINE { type=EEikCtChoiceList; prompt="Topic"; id=EPsiHelpTopic;
 			control=CHOICELIST { array_id=r_psi_help_empty; }; },
-		DLG_LINE { type=EEikCtRichTextEditor; prompt=""; id=EPsiHelpText;
-			control=RTXTED { width=520; height=PSIHELP_TALL_HEIGHT; numlines=PSIHELP_TALL_LINES; textlimit=6000; flags=EEikEdwinNoAutoSelection|EEikEdwinReadOnly; }; }
+		DLG_LINE { type=EPsiCtHelpBox; prompt=""; id=EPsiHelpText;
+			control=RTXTED { width=495; height=PSIHELP_TALL_HEIGHT; numlines=PSIHELP_TALL_LINES; textlimit=6000; flags=EEikEdwinNoAutoSelection|EEikEdwinReadOnly; }; }
 		};
 	}
 
