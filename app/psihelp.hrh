@@ -1,4 +1,4 @@
-// (a copy of Coda's psisys/psihelp.hrh, kept the same in every Coda program: change both)
+// (one copy, kept the same in every Coda program: psion-netbook psisys/ is the master)
 // psihelp.hrh: the control ids of the Help dialog (psihelp.h, psihelp.rssi)
 #ifndef PSIHELP_HRH
 #define PSIHELP_HRH

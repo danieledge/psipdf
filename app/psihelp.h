@@ -1,4 +1,4 @@
-// (a copy of Coda's psisys/psihelp.h, kept the same in every Coda program: change both)
+// (one copy, kept the same in every Coda program: psion-netbook psisys/ is the master)
 // psihelp.h: Tools > Help on <program> (Shift+Ctrl+H) for Coda's own
 // programs (review R102): a topic list and a read-only text, as PsiMail's,
 // PsiTerm's and PsiLinux's Help, so that every Coda program has the same
@@ -64,7 +64,7 @@ inline void CPsiHelpDialog::PreLayoutDynInitL()
 		titles->AppendL(t);
 		}
 	CleanupStack::Pop();
-	// a scroll bar: the topics are longer than the box (PsiPDF 0.09)
+	// a scroll bar, shown when the topic is longer than the box (PsiPDF 0.09)
 	CEikRichTextEditor* ed = (CEikRichTextEditor*)Control(EPsiHelpText);
 	CEikScrollBarFrame* sb = ed->CreateScrollBarFrameL();
 	if (sb)
@@ -95,6 +95,15 @@ inline void CPsiHelpDialog::ShowTopicL(TInt aTopic)
 	cf.iFontSpec.iFontStyle.SetStrokeWeight(EStrokeWeightBold);
 	cm.SetAttrib(EAttFontStrokeWeight);
 	ed->RichText()->ApplyCharFormatL(cf, cm, 0, title.Length());
+	// the title 3 pixels lower: the box, sized by its lines, has the
+	// editor's 3-pixel margin at the bottom, where the top of the next
+	// line showed, cut through; now it ends on a whole line (PsiAmp 0.09)
+	CParaFormat* pf = CParaFormat::NewLC();
+	TParaFormatMask pm;
+	pf->iSpaceBeforeInTwips = CEikonEnv::Static()->ScreenDevice()->VerticalPixelsToTwips(3);
+	pm.SetAttrib(EAttSpaceBefore);
+	ed->RichText()->ApplyParaFormatL(pf, pm, 0, 1);
+	CleanupStack::PopAndDestroy();
 	ed->HandleTextChangedL();
 	ed->SetCursorPosL(0, EFalse);
 	}

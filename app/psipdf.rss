@@ -173,6 +173,13 @@ RESOURCE TOOLBAR r_pp_toolbar_coda
 		TBAR_BUTTON { id=EPpCmdZoomOut; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Zoom\nout"; flags=EEikToolBarCtrlHasSetMinLength; length=PP_NB_BUTTON_LENGTH; },
 		TBAR_CTRL
 			{
+			type=EEikCtSpacer;
+			flags=EEikToolBarCtrlHasSetMinLength|EEikToolBarCtrlIsStretchable;
+			length=0;
+			control=SPACER;
+			},
+		TBAR_CTRL
+			{
 			type=EEikCtLabel;
 			id=EPpCmdPageLabel;
 			flags=EEikToolBarCtrlHasSetMinLength;
@@ -181,13 +188,6 @@ RESOURCE TOOLBAR r_pp_toolbar_coda
 			},
 		TBAR_CTRL { type=PP_CT_CODA_BATTERY; control=PP_NB_BATTERY; },
 		TBAR_CTRL { type=PP_CT_CODA_GAUGES; control=SPACER; },
-		TBAR_CTRL
-			{
-			type=EEikCtSpacer;
-			flags=EEikToolBarCtrlHasSetMinLength|EEikToolBarCtrlIsStretchable;
-			length=0;
-			control=SPACER;
-			},
 		TBAR_CTRL
 			{
 			type=PP_CT_CODA_CLOCK;
@@ -375,7 +375,7 @@ RESOURCE DIALOG r_pp_about_dialog
 		{
 		DLG_LINE { type=EEikCtLabel; id=EPpDlgAboutName; control=LABEL { horiz_align=EEikLabelAlignHLeft; reserve_length=20; txt="PsiPDF"; }; },
 		DLG_LINE { type=EEikCtLabel; control=LABEL { horiz_align=EEikLabelAlignHLeft; txt="PDF viewer for the Psion Series 5mx & netBook"; }; },
-		DLG_LINE { type=EEikCtLabel; id=EPpDlgAboutCopy; control=LABEL { horiz_align=EEikLabelAlignHLeft; reserve_length=40; txt="-"; }; },
+		DLG_LINE { type=EEikCtLabel; id=EPpDlgAboutCopy; control=LABEL { horiz_align=EEikLabelAlignHLeft; reserve_length=60; txt="-"; }; },
 		DLG_LINE { type=EEikCtLabel; control=LABEL { horiz_align=EEikLabelAlignHLeft; standard_font=EEikLabelFontAnnotation; txt="Buy me a coffee: buymeacoffee.com/danedge"; }; },
 		DLG_LINE { type=EEikCtLabel; id=EPpDlgAboutMuPdf; control=LABEL { horiz_align=EEikLabelAlignHLeft; standard_font=EEikLabelFontAnnotation; reserve_length=60; txt="-"; }; },
 		DLG_LINE { type=EEikCtLabel; control=LABEL { horiz_align=EEikLabelAlignHLeft; standard_font=EEikLabelFontAnnotation; txt="FreeType (FTL), zlib, URW++ fonts; based in part on the work of the IJG"; }; },

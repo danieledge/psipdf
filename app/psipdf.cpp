@@ -588,7 +588,12 @@ private:
 			l->SetFont(iBold);
 		TBuf<60> t;
 		t.Append(TChar(0xa9));               // the copyright sign, in the Psion's fonts
-		t.Append(_L(" Dan Edge 2026 - part of Coda"));
+		t.Append(_L(" Dan Edge 2026"));
+		// "part of Coda" only on Coda's netBook (its image has PsiBattHook.bin),
+		// as every bundled program's About (psion-core psiabout.h)
+		TEntry e;
+		if (iEikonEnv->FsSession().Entry(_L("Z:\\System\\Libs\\PsiBattHook.bin"), e) == KErrNone)
+			t.Append(_L(" - part of Coda for the Psion netBook"));
 		((CEikLabel*)Control(EPpDlgAboutCopy))->SetTextL(t);
 		TBuf<60> m(_L("Uses MuPDF 1.3, "));
 		m.Append(TChar(0xa9));
