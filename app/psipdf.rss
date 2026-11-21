@@ -33,13 +33,15 @@ RESOURCE EIK_APP_INFO
 	{
 	menubar=r_pp_menubar;
 	hotkeys=r_pp_hotkeys;
-	toolbar=r_pp_toolbar;
-	}
+	}                                   // (the toolbar: made for the machine at start-up, CPpAppUi::MakeToolBarL)
 
-// The toolbar, as the built-in programs have it: the file's name (a tap
-// shows the open programs), Previous and Next page, Zoom in and Zoom out,
-// the page shown ("Page 3" over "of 12"), and the clock. Pictures from
-// PsiPDF.mbm (pkg/mkicon.py), set at start-up.
+// The toolbars. Each has the file's name (a tap shows the open programs),
+// Previous and Next page, Zoom in and Zoom out, and the clock; pictures
+// from PsiPDF.mbm (pkg/mkicon.py), set at start-up.
+//
+// r_pp_toolbar, the Series 5mx's (240 lines): buttons of the standard
+// height and no page label, so the clock keeps its room (24 + 4 x 37 + 2
+// leaves 66, as the built-in programs have); the page shown is an infoprint.
 RESOURCE TOOLBAR r_pp_toolbar
 	{
 	breadth=KEikStdToolBarWidth;
@@ -52,16 +54,83 @@ RESOURCE TOOLBAR r_pp_toolbar
 			flags=EEikToolBarCtrlHasSetMinLength;
 			length=KEikStdFileNameLabelHeight;
 			},
-		TBAR_BUTTON { id=EPpCmdPrev; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Previous"; flags=EEikToolBarCtrlHasSetMinLength; length=40; },
-		TBAR_BUTTON { id=EPpCmdNext; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Next"; flags=EEikToolBarCtrlHasSetMinLength; length=40; },
-		TBAR_BUTTON { id=EPpCmdZoomIn; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Zoom\nin"; flags=EEikToolBarCtrlHasSetMinLength; length=40; },
-		TBAR_BUTTON { id=EPpCmdZoomOut; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Zoom\nout"; flags=EEikToolBarCtrlHasSetMinLength; length=40; },
+		TBAR_BUTTON { id=EPpCmdPrev; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Back"; flags=EEikToolBarCtrlHasSetMinLength; length=KEikStdToolBarButtonHeight; },
+		TBAR_BUTTON { id=EPpCmdNext; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Next"; flags=EEikToolBarCtrlHasSetMinLength; length=KEikStdToolBarButtonHeight; },
+		TBAR_BUTTON { id=EPpCmdZoomIn; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Zoom\nin"; flags=EEikToolBarCtrlHasSetMinLength; length=KEikStdToolBarButtonHeight; },
+		TBAR_BUTTON { id=EPpCmdZoomOut; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Zoom\nout"; flags=EEikToolBarCtrlHasSetMinLength; length=KEikStdToolBarButtonHeight; },
+		TBAR_CTRL
+			{
+			type=EEikCtSpacer;
+			flags=EEikToolBarCtrlHasSetMinLength|EEikToolBarCtrlIsStretchable;
+			length=0;
+			control=SPACER;
+			},
+		TBAR_CTRL
+			{
+			type=EEikCtClock;
+			control=CLOCK { digitalresourceid=R_EIK_DIGITAL_CLOCK; analogresourceid=R_EIK_ANALOG_CLOCK; };
+			},
+		TBAR_CTRL
+			{
+			type=EEikCtSpacer;
+			flags=EEikToolBarCtrlHasSetMinLength;
+			length=KEikStdGapBelowClock;
+			control=SPACER;
+			}
+		};
+	}
+
+// the netBook's (480 lines): the buttons at the netBook's 50 pixels, as
+// Psion's own programs there, and the page shown ("Page 3" over "of 12")
+// under them. r_pp_toolbar_nb on Psion's own image; r_pp_toolbar_coda on
+// Coda's (Z:\System\Libs\PsiBattHook.bin there), with Coda's battery, gauges
+// and clock under the page, as Word and Agenda have them: the types are
+// made by Coda's Eikon (psion-netbook tools/battpatch.mts and toolbars.mts:
+// 0x7044 the battery, 0x7042 the gauges, 0x7043 the clock). Chosen at
+// start-up (CPpAppUi::ConstructL).
+#define PP_NB_BUTTON_LENGTH 50
+#define PP_PAGE_LABEL_LENGTH 34
+#define PP_CT_CODA_GAUGES 0x7042
+#define PP_CT_CODA_CLOCK 0x7043
+#define PP_CT_CODA_BATTERY 0x7044
+
+// the netBook battery's fields, as Psion's toolbars have them (Word.rsc,
+// v1.05(450)); its last is a resource of the netBook's Eikon
+STRUCT PP_NB_BATTERY
+	{
+	LONG f1=-1;
+	WORD f2=10;
+	BYTE f3=0;
+	BYTE f4=3;
+	WORD f5=0;
+	BYTE f6=0;
+	BYTE f7=0x18;
+	BYTE f8=0;
+	LLINK f9=0x00f3b1b5;
+	}
+
+RESOURCE TOOLBAR r_pp_toolbar_nb
+	{
+	breadth=KEikStdToolBarWidth;
+	controls=
+		{
+		TBAR_CTRL
+			{
+			type=EEikCtFileNameLabel;
+			id=EPpCmdFileName;
+			flags=EEikToolBarCtrlHasSetMinLength;
+			length=KEikStdFileNameLabelHeight;
+			},
+		TBAR_BUTTON { id=EPpCmdPrev; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Back"; flags=EEikToolBarCtrlHasSetMinLength; length=PP_NB_BUTTON_LENGTH; },
+		TBAR_BUTTON { id=EPpCmdNext; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Next"; flags=EEikToolBarCtrlHasSetMinLength; length=PP_NB_BUTTON_LENGTH; },
+		TBAR_BUTTON { id=EPpCmdZoomIn; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Zoom\nin"; flags=EEikToolBarCtrlHasSetMinLength; length=PP_NB_BUTTON_LENGTH; },
+		TBAR_BUTTON { id=EPpCmdZoomOut; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Zoom\nout"; flags=EEikToolBarCtrlHasSetMinLength; length=PP_NB_BUTTON_LENGTH; },
 		TBAR_CTRL
 			{
 			type=EEikCtLabel;
 			id=EPpCmdPageLabel;
 			flags=EEikToolBarCtrlHasSetMinLength;
-			length=34;
+			length=PP_PAGE_LABEL_LENGTH;
 			control=LABEL { horiz_align=EEikLabelAlignHCenter; vert_align=EEikLabelAlignVCenter; standard_font=EEikLabelFontAnnotation; reserve_length=14; txt=""; };
 			},
 		TBAR_CTRL
@@ -74,6 +143,54 @@ RESOURCE TOOLBAR r_pp_toolbar
 		TBAR_CTRL
 			{
 			type=EEikCtClock;
+			control=CLOCK { digitalresourceid=R_EIK_DIGITAL_CLOCK; analogresourceid=R_EIK_ANALOG_CLOCK; };
+			},
+		TBAR_CTRL
+			{
+			type=EEikCtSpacer;
+			flags=EEikToolBarCtrlHasSetMinLength;
+			length=KEikStdGapBelowClock;
+			control=SPACER;
+			}
+		};
+	}
+
+RESOURCE TOOLBAR r_pp_toolbar_coda
+	{
+	breadth=KEikStdToolBarWidth;
+	controls=
+		{
+		TBAR_CTRL
+			{
+			type=EEikCtFileNameLabel;
+			id=EPpCmdFileName;
+			flags=EEikToolBarCtrlHasSetMinLength;
+			length=KEikStdFileNameLabelHeight;
+			},
+		TBAR_BUTTON { id=EPpCmdPrev; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Back"; flags=EEikToolBarCtrlHasSetMinLength; length=PP_NB_BUTTON_LENGTH; },
+		TBAR_BUTTON { id=EPpCmdNext; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Next"; flags=EEikToolBarCtrlHasSetMinLength; length=PP_NB_BUTTON_LENGTH; },
+		TBAR_BUTTON { id=EPpCmdZoomIn; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Zoom\nin"; flags=EEikToolBarCtrlHasSetMinLength; length=PP_NB_BUTTON_LENGTH; },
+		TBAR_BUTTON { id=EPpCmdZoomOut; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Zoom\nout"; flags=EEikToolBarCtrlHasSetMinLength; length=PP_NB_BUTTON_LENGTH; },
+		TBAR_CTRL
+			{
+			type=EEikCtLabel;
+			id=EPpCmdPageLabel;
+			flags=EEikToolBarCtrlHasSetMinLength;
+			length=PP_PAGE_LABEL_LENGTH;
+			control=LABEL { horiz_align=EEikLabelAlignHCenter; vert_align=EEikLabelAlignVCenter; standard_font=EEikLabelFontAnnotation; reserve_length=14; txt=""; };
+			},
+		TBAR_CTRL { type=PP_CT_CODA_BATTERY; control=PP_NB_BATTERY; },
+		TBAR_CTRL { type=PP_CT_CODA_GAUGES; control=SPACER; },
+		TBAR_CTRL
+			{
+			type=EEikCtSpacer;
+			flags=EEikToolBarCtrlHasSetMinLength|EEikToolBarCtrlIsStretchable;
+			length=0;
+			control=SPACER;
+			},
+		TBAR_CTRL
+			{
+			type=PP_CT_CODA_CLOCK;
 			control=CLOCK { digitalresourceid=R_EIK_DIGITAL_CLOCK; analogresourceid=R_EIK_ANALOG_CLOCK; };
 			},
 		TBAR_CTRL
@@ -126,8 +243,8 @@ RESOURCE MENU_PANE r_pp_file_menu
 	{
 	items=
 		{
-		MENU_ITEM { command=EPpCmdOpen; txt="Open file..."; },
-		MENU_ITEM { command=EPpCmdDetails; txt="File details..."; flags=EEikMenuItemSeparatorAfter; },
+		MENU_ITEM { command=EPpCmdOpen; txt="Open file"<KEllipsis>; },
+		MENU_ITEM { command=EPpCmdDetails; txt="File details"<KEllipsis>; flags=EEikMenuItemSeparatorAfter; },
 		MENU_ITEM { command=EEikCmdExit; txt="Close"; }
 		};
 	}
@@ -136,9 +253,9 @@ RESOURCE MENU_PANE r_pp_edit_menu
 	{
 	items=
 		{
-		MENU_ITEM { command=EPpCmdFind; txt="Find..."; },
+		MENU_ITEM { command=EPpCmdFind; txt="Find"<KEllipsis>; },
 		MENU_ITEM { command=EPpCmdFindNext; txt="Find next"; flags=EEikMenuItemSeparatorAfter; },
-		MENU_ITEM { command=EPpCmdGoTo; txt="Go to page..."; }
+		MENU_ITEM { command=EPpCmdGoTo; txt="Go to page"<KEllipsis>; }
 		};
 	}
 
@@ -146,13 +263,13 @@ RESOURCE MENU_PANE r_pp_view_menu
 	{
 	items=
 		{
-		MENU_ITEM { command=EPpCmdNext; txt="Next page"; },
-		MENU_ITEM { command=EPpCmdPrev; txt="Previous page"; },
-		MENU_ITEM { command=EPpCmdFirst; txt="First page"; },
-		MENU_ITEM { command=EPpCmdLast; txt="Last page"; flags=EEikMenuItemSeparatorAfter; },
 		MENU_ITEM { command=EPpCmdZoomIn; txt="Zoom in"; },
 		MENU_ITEM { command=EPpCmdZoomOut; txt="Zoom out"; },
-		MENU_ITEM { cascade=r_pp_zoom_menu; txt="Zoom"; flags=EEikMenuItemSeparatorAfter; },
+		MENU_ITEM { cascade=r_pp_zoom_menu; txt="Zoom to"; flags=EEikMenuItemSeparatorAfter; },
+		MENU_ITEM { command=EPpCmdNext; txt="Next page"; },
+		MENU_ITEM { command=EPpCmdPrev; txt="Previous page"; },
+		MENU_ITEM { command=EPpCmdFirst; txt="First page"; extratxt="Ctrl+Fn+Up"; },
+		MENU_ITEM { command=EPpCmdLast; txt="Last page"; extratxt="Ctrl+Fn+Down"; flags=EEikMenuItemSeparatorAfter; },
 		MENU_ITEM { command=EPpCmdToolbar; txt="Show toolbar"; flags=EEikMenuItemCheckBox; }
 		};
 	}
@@ -173,9 +290,18 @@ RESOURCE MENU_PANE r_pp_tools_menu
 	{
 	items=
 		{
-		MENU_ITEM { command=EPpCmdKeepLog; txt="Keep a log"; flags=EEikMenuItemCheckBox|EEikMenuItemSeparatorAfter; },
+		MENU_ITEM { cascade=r_pp_trouble_menu; txt="Troubleshooting"; flags=EEikMenuItemSeparatorAfter; },
 		MENU_ITEM { command=EPpCmdHelp; txt="Help on PsiPDF"; },
 		MENU_ITEM { command=EPpCmdAbout; txt="About PsiPDF"; }
+		};
+	}
+
+// Tools > Troubleshooting, in the same place in every Coda program
+RESOURCE MENU_PANE r_pp_trouble_menu
+	{
+	items=
+		{
+		MENU_ITEM { command=EPpCmdKeepLog; txt="Keep a log"; flags=EEikMenuItemCheckBox; }
 		};
 	}
 
@@ -201,7 +327,7 @@ RESOURCE DIALOG r_pp_find_dialog
 	buttons=R_EIK_BUTTONS_CANCEL_OK;
 	items=
 		{
-		DLG_LINE { type=EEikCtEdwin; prompt="Find"; id=EPpDlgFindText; control=EDWIN { width=20; maxlength=60; }; }
+		DLG_LINE { type=EEikCtEdwin; prompt="Text"; id=EPpDlgFindText; control=EDWIN { width=18; maxlength=60; }; }
 		};
 	}
 
@@ -219,7 +345,8 @@ RESOURCE DIALOG r_pp_password_dialog
 		};
 	}
 
-// File > File details: the file, its title, pages and size (set at run time)
+// File > File details: the file's name, title, pages, size and folder,
+// each by its prompt (set at run time; a fixed width, CPpDetailsDialog)
 RESOURCE DIALOG r_pp_details_dialog
 	{
 	title="File details";
@@ -227,15 +354,18 @@ RESOURCE DIALOG r_pp_details_dialog
 	buttons=R_EIK_BUTTONS_CONTINUE;
 	items=
 		{
-		DLG_LINE { type=EEikCtLabel; id=EPpDlgDetails1; control=LABEL { reserve_length=40; txt="-"; }; },
-		DLG_LINE { type=EEikCtLabel; id=EPpDlgDetails2; control=LABEL { reserve_length=40; txt="-"; }; },
-		DLG_LINE { type=EEikCtLabel; id=EPpDlgDetails3; control=LABEL { reserve_length=40; txt="-"; }; },
-		DLG_LINE { type=EEikCtLabel; id=EPpDlgDetails4; control=LABEL { reserve_length=40; txt="-"; }; }
+		DLG_LINE { type=EEikCtLabel; prompt="Name"; id=EPpDlgDetails1; control=LABEL { reserve_length=36; txt="-"; }; },
+		DLG_LINE { type=EEikCtLabel; prompt="Title"; id=EPpDlgDetails2; control=LABEL { reserve_length=36; txt="-"; }; },
+		DLG_LINE { type=EEikCtLabel; prompt="Pages"; id=EPpDlgDetails3; control=LABEL { reserve_length=36; txt="-"; }; },
+		DLG_LINE { type=EEikCtLabel; prompt="Size"; id=EPpDlgDetails4; control=LABEL { reserve_length=36; txt="-"; }; },
+		DLG_LINE { type=EEikCtLabel; prompt="Folder"; id=EPpDlgDetails5; control=LABEL { reserve_length=36; txt="-"; }; }
 		};
 	}
 
-// Tools > About PsiPDF. The version and the copyright sign (0xa9 in the
-// Psion's fonts) are set at run time (CPpAboutDialog).
+// Tools > About PsiPDF, as every Coda program's About: the name and
+// version (bold), what it is, the copyright, the coffee, then the credits
+// and licences in the small font. The version, the bold and the copyright
+// signs (0xa9 in the Psion's fonts) are set at run time (CPpAboutDialog).
 RESOURCE DIALOG r_pp_about_dialog
 	{
 	title="About PsiPDF";
@@ -243,13 +373,14 @@ RESOURCE DIALOG r_pp_about_dialog
 	buttons=R_EIK_BUTTONS_CONTINUE;
 	items=
 		{
-		DLG_LINE { type=EEikCtLabel; id=EPpDlgAboutName; control=LABEL { standard_font=EEikLabelFontLegend; reserve_length=20; txt="PsiPDF"; }; },
-		DLG_LINE { type=EEikCtLabel; id=EPpDlgAboutText; control=LABEL { reserve_length=60; txt="-"; }; },
-		DLG_LINE { type=EEikCtLabel; id=EPpDlgAboutMuPdf; control=LABEL { standard_font=EEikLabelFontAnnotation; reserve_length=60; txt="-"; }; },
-		DLG_LINE { type=EEikCtLabel; id=EPpDlgAboutSource; control=LABEL { standard_font=EEikLabelFontAnnotation; txt="Free software: the source is at github.com/danieledge/psipdf"; }; },
-		DLG_LINE { type=EEikCtLabel; control=LABEL { standard_font=EEikLabelFontAnnotation; txt="FreeType (FTL), zlib, URW++ fonts; based in part on the work of the IJG"; }; },
-		DLG_LINE { type=EEikCtLabel; control=LABEL { standard_font=EEikLabelFontAnnotation; txt="This product includes software licensed from Symbian Ltd (c) Symbian Ltd 1998-9"; }; },
-		DLG_LINE { type=EEikCtLabel; control=LABEL { standard_font=EEikLabelFontAnnotation; txt="Support: buymeacoffee.com/danedge"; }; }
+		DLG_LINE { type=EEikCtLabel; id=EPpDlgAboutName; control=LABEL { horiz_align=EEikLabelAlignHLeft; reserve_length=20; txt="PsiPDF"; }; },
+		DLG_LINE { type=EEikCtLabel; control=LABEL { horiz_align=EEikLabelAlignHLeft; txt="PDF viewer for the Psion Series 5mx & netBook"; }; },
+		DLG_LINE { type=EEikCtLabel; id=EPpDlgAboutCopy; control=LABEL { horiz_align=EEikLabelAlignHLeft; reserve_length=40; txt="-"; }; },
+		DLG_LINE { type=EEikCtLabel; control=LABEL { horiz_align=EEikLabelAlignHLeft; standard_font=EEikLabelFontAnnotation; txt="Buy me a coffee: buymeacoffee.com/danedge"; }; },
+		DLG_LINE { type=EEikCtLabel; id=EPpDlgAboutMuPdf; control=LABEL { horiz_align=EEikLabelAlignHLeft; standard_font=EEikLabelFontAnnotation; reserve_length=60; txt="-"; }; },
+		DLG_LINE { type=EEikCtLabel; control=LABEL { horiz_align=EEikLabelAlignHLeft; standard_font=EEikLabelFontAnnotation; txt="FreeType (FTL), zlib, URW++ fonts; based in part on the work of the IJG"; }; },
+		DLG_LINE { type=EEikCtLabel; id=EPpDlgAboutSymbian; control=LABEL { horiz_align=EEikLabelAlignHLeft; standard_font=EEikLabelFontAnnotation; reserve_length=80; txt="-"; }; },
+		DLG_LINE { type=EEikCtLabel; control=LABEL { horiz_align=EEikLabelAlignHLeft; standard_font=EEikLabelFontAnnotation; txt="Source and licences: github.com/danieledge/psipdf"; }; }
 		};
 	}
 

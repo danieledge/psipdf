@@ -83,7 +83,7 @@ static TBool PsiMemAnswer(RWsSession& aWs, TUint aUid, const TDesC8& aWord, cons
 #include "psierr.h"                  // an error as words for a message
 
 const TUid KUidPsiPdf = { 0x01000AD8 };
-_LIT(KPpVersion, "0.08");
+_LIT(KPpVersion, "0.09");
 _LIT(KPpIni, "C:\\System\\Apps\\PsiPDF\\PsiPDF.ini");
 _LIT(KPpLog, "C:\\System\\Apps\\PsiPDF\\PsiPDF.log");
 _LIT(KPpLogOld, "C:\\System\\Apps\\PsiPDF\\PsiPDF.old");
@@ -96,24 +96,26 @@ const TInt KPpMaxPages = 99999;      // (the most Go to page takes; a file that 
 static const TPsiHelpTopic KPpHelp[] =
 	{
 	{ "Reading",
-	  "PsiPDF shows PDF files. Tap one on the System screen, or use File > Open file (Ctrl+O). "
+	  "PsiPDF shows PDF files. Tap one on the System screen, or use File > Open file (Ctrl+O): "
+	  "the first time, it opens in the Example files folder on the card. "
 	  "Started from its icon, PsiPDF opens the last file again, at the page and zoom it was left at.\n\n"
 	  "Fn+Down and Fn+Up (or Shift+Ctrl+N and Shift+Ctrl+B, the toolbar, or the dog-ears in the "
 	  "bottom corners) turn the page; Ctrl+Fn+Up and Ctrl+Fn+Down go to the first and last page, "
 	  "and Edit > Go to page (Ctrl+G) to any. The arrow keys, or the pen, move round the page.\n\n"
-	  "Ctrl+M and Shift+Ctrl+M zoom in and out, round fit width, fit page, 100%, 150% and 200%. "
-	  "Ctrl+W fits the width (the standard), Shift+Ctrl+W the page." },
+	  "A file opens fitted to the width of the screen. Ctrl+M zooms in and Shift+Ctrl+M out, a step "
+	  "at a time in order of size: the whole page, the width, 100%, 150% and 200%, then round again. "
+	  "Ctrl+W fits the width, Shift+Ctrl+W the whole page. View > Zoom to has them all." },
 	{ "Finding text",
 	  "Edit > Find (Ctrl+F) finds text, in any case, from the page shown onwards; Find next (Ctrl+J) "
 	  "finds the next. Esc stops it.\n\n"
-	  "File > File details (Shift+Ctrl+D) shows the file's title, its pages and size." },
+	  "File > File details (Shift+Ctrl+D) shows the file's title, its pages, its size and its folder." },
 	{ "Big pages",
 	  "A page appears as it is drawn, from the top down. Esc stops the drawing; Enter draws the page "
 	  "again. While you read, PsiPDF draws the next page ahead if there is the memory.\n\n"
 	  "A page that cannot be shown says why, on the screen. Pages with many pictures need the most "
 	  "memory: close other programs and press Enter.\n\n"
-	  "Tools > Keep a log writes what PsiPDF does to PsiPDF.log, for whoever is looking into a "
-	  "problem." },
+	  "Tools > Troubleshooting > Keep a log writes what PsiPDF does to a log, to send with a "
+	  "question about a problem." },
 	};
 // (0.06) the file being opened, until its first page is drawn: a file that
 // ran out of memory, or ended the engine, is not opened again at the next
@@ -297,6 +299,8 @@ private:
 	void DetailsL();
 	void ShowToolBarL(TBool aShow);
 	TRect ViewRect(TBool aToolbar) const;
+	CEikToolBar* Bar() const { return iToolBar; }
+	void MakeToolBarL();
 	void ButtonPictureL(TInt aId, TInt aIcon);
 	void Busy(const TDesC& aText);
 	void BusyEnd();
@@ -452,10 +456,40 @@ static void ToUtf8(char* aOut, TInt aMax, const TDesC& aIn)
 	aOut[n] = 0;
 	}
 
-class CPpGoToDialog : public CEikDialog
+// (0.09) Arial bold at the height of EIKON's normal font: the system's
+// font, so Coda's choice of text applies (as Coda's own programs make it);
+// NULL if there is none. Released with ReleaseFont.
+static CFont* PpBoldFont()
+	{
+	CEikonEnv* env = CEikonEnv::Static();
+	TFontSpec spec(_L("Arial"), env->ScreenDevice()->VerticalPixelsToTwips(env->NormalFont()->HeightInPixels()));
+	spec.iFontStyle.SetStrokeWeight(EStrokeWeightBold);
+	CFont* f = NULL;
+	if (env->ScreenDevice()->GetNearestFontInTwips(f, spec) != KErrNone)
+		return NULL;
+	return f;
+	}
+
+// (0.09) PsiPDF's dialogs: a fixed width each (never sized by what is in
+// them, Dan's rule), centred, inside the screen on either machine
+class CPpFixedDialog : public CEikDialog
 	{
 public:
-	CPpGoToDialog(TInt& aPage, TInt aPages) : iPage(aPage), iPages(aPages) {}
+	CPpFixedDialog(TInt aWidth) : iWidth(aWidth) {}
+protected:
+	void SetSizeAndPositionL(const TSize& aSize)
+		{
+		TSize screen = iEikonEnv->ScreenDevice()->SizeInPixels();
+		TSize size(Min(iWidth, screen.iWidth - 16), Min(aSize.iHeight, screen.iHeight - 8));
+		SetCornerAndSizeL(EHCenterVCenter, size);
+		}
+	TInt iWidth;
+	};
+
+class CPpGoToDialog : public CPpFixedDialog
+	{
+public:
+	CPpGoToDialog(TInt& aPage, TInt aPages) : CPpFixedDialog(300), iPage(aPage), iPages(aPages) {}
 private:
 	void PreLayoutDynInitL()
 		{
@@ -478,10 +512,10 @@ private:
 	TInt iPages;
 	};
 
-class CPpFindDialog : public CEikDialog
+class CPpFindDialog : public CPpFixedDialog
 	{
 public:
-	CPpFindDialog(TDes& aText) : iText(aText) {}
+	CPpFindDialog(TDes& aText) : CPpFixedDialog(440), iText(aText) {}
 private:
 	void PreLayoutDynInitL()
 		{
@@ -505,10 +539,10 @@ private:
 	TDes& iText;
 	};
 
-class CPpPasswordDialog : public CEikDialog
+class CPpPasswordDialog : public CPpFixedDialog
 	{
 public:
-	CPpPasswordDialog(const TDesC& aFile, TDes& aPassword, TBool aAgain) : iFile(aFile), iPassword(aPassword), iAgain(aAgain) {}
+	CPpPasswordDialog(const TDesC& aFile, TDes& aPassword, TBool aAgain) : CPpFixedDialog(480), iFile(aFile), iPassword(aPassword), iAgain(aAgain) {}
 private:
 	void PreLayoutDynInitL()
 		{
@@ -530,8 +564,18 @@ private:
 	TBool iAgain;
 	};
 
-class CPpAboutDialog : public CEikDialog
+// Tools > About PsiPDF: the same layout as every Coda program's About
+// (0.09): the name and version in bold, what it is, the copyright, the
+// coffee, then the credits and licences in the small font. A fixed width.
+class CPpAboutDialog : public CPpFixedDialog
 	{
+public:
+	CPpAboutDialog() : CPpFixedDialog(520) {}
+	~CPpAboutDialog()
+		{
+		if (iBold)
+			iEikonEnv->ScreenDevice()->ReleaseFont(iBold);
+		}
 private:
 	void PreLayoutDynInitL()
 		{
@@ -539,22 +583,29 @@ private:
 		name.Format(_L("PsiPDF %S"), &KPpVersion);
 		CEikLabel* l = (CEikLabel*)Control(EPpDlgAboutName);
 		l->SetTextL(name);
-		l->SetFont(iEikonEnv->TitleFont());
-		TBuf<80> t(_L("PDF files on the Psion netBook & Series 5mx\n"));
-		t.Append(TChar(0xa9));               // (c), as the Psion's fonts have it
-		t.Append(_L(" 2026 Dan Edge"));
-		((CEikLabel*)Control(EPpDlgAboutText))->SetTextL(t);
+		iBold = PpBoldFont();
+		if (iBold)
+			l->SetFont(iBold);
+		TBuf<60> t;
+		t.Append(TChar(0xa9));               // the copyright sign, in the Psion's fonts
+		t.Append(_L(" Dan Edge 2026 - part of Coda"));
+		((CEikLabel*)Control(EPpDlgAboutCopy))->SetTextL(t);
 		TBuf<60> m(_L("Uses MuPDF 1.3, "));
 		m.Append(TChar(0xa9));
 		m.Append(_L(" Artifex Software - AGPL-3.0"));
 		((CEikLabel*)Control(EPpDlgAboutMuPdf))->SetTextL(m);
+		TBuf<100> sy(_L("This product includes software licensed from Symbian Ltd "));
+		sy.Append(TChar(0xa9));
+		sy.Append(_L(" Symbian Ltd 1998-9"));
+		((CEikLabel*)Control(EPpDlgAboutSymbian))->SetTextL(sy);
 		}
+	CFont* iBold;
 	};
 
-class CPpDetailsDialog : public CEikDialog
+class CPpDetailsDialog : public CPpFixedDialog
 	{
 public:
-	CPpDetailsDialog(const TDesC& a1, const TDesC& a2, const TDesC& a3, const TDesC& a4) : i1(a1), i2(a2), i3(a3), i4(a4) {}
+	CPpDetailsDialog(const TDesC& a1, const TDesC& a2, const TDesC& a3, const TDesC& a4, const TDesC& a5) : CPpFixedDialog(440), i1(a1), i2(a2), i3(a3), i4(a4), i5(a5) {}
 private:
 	void PreLayoutDynInitL()
 		{
@@ -562,11 +613,13 @@ private:
 		((CEikLabel*)Control(EPpDlgDetails2))->SetTextL(i2);
 		((CEikLabel*)Control(EPpDlgDetails3))->SetTextL(i3);
 		((CEikLabel*)Control(EPpDlgDetails4))->SetTextL(i4);
+		((CEikLabel*)Control(EPpDlgDetails5))->SetTextL(i5);
 		}
 	const TDesC& i1;
 	const TDesC& i2;
 	const TDesC& i3;
 	const TDesC& i4;
+	const TDesC& i5;
 	};
 
 class CPpDocument : public CEikDocument
@@ -699,19 +752,20 @@ void CPpAppUi::ConstructL()
 		iCoeEnv->FsSession().Rename(KPpLog, KPpLogOld);
 		}
 	RestoreRecogniser();
-	TRAPD(err, ButtonPictureL(EPpCmdPrev, EMbmPpPrev);
+	TRAPD(err, MakeToolBarL());
+	TRAP(err, ButtonPictureL(EPpCmdPrev, EMbmPpPrev);
 		ButtonPictureL(EPpCmdNext, EMbmPpNext);
 		ButtonPictureL(EPpCmdZoomIn, EMbmPpZoomIn);
 		ButtonPictureL(EPpCmdZoomOut, EMbmPpZoomOut));
 	(void)err;                           // (words alone, if the pictures are missing)
 	iEikonEnv->Process()->SetMainDocFileName(_L("PsiPDF"));
-	if (iToolBar)
+	if (Bar())
 		{
-		CEikFileNameLabel* label = (CEikFileNameLabel*)iToolBar->ControlById(EPpCmdFileName);
+		CEikFileNameLabel* label = (CEikFileNameLabel*)Bar()->ControlById(EPpCmdFileName);
 		if (label)
 			TRAP(err, label->UpdateL());
 		if (!iToolbarShown)
-			iToolBar->MakeVisible(EFalse);
+			Bar()->MakeVisible(EFalse);
 		}
 	iView = new(ELeave) CPpView(*this);
 	iView->ConstructL(ViewRect(iToolbarShown));
@@ -740,7 +794,7 @@ TBool CPpAppUi::ProcessCommandParametersL(TApaCommand aCommand, TFileName& aDocu
 			Log(l);
 			iCoeEnv->FsSession().Delete(KPpTrying);
 			iNote = _L("Last file not opened again");
-			iNoteWhy = _L("It could not be shown last time - Ctrl+O opens it");
+			iNoteWhy = _L("It did not show last time - open it with Ctrl+O");
 			}
 		else
 			OpenPdfL(iRecent[0].iFile);
@@ -757,7 +811,7 @@ void CPpAppUi::OpenFileL(const TDesC& aFileName)
 
 void CPpAppUi::ButtonPictureL(TInt aId, TInt aIcon)
 	{
-	CEikCommandButton* b = iToolBar ? (CEikCommandButton*)iToolBar->ControlById(aId) : NULL;
+	CEikCommandButton* b = Bar() ? (CEikCommandButton*)Bar()->ControlById(aId) : NULL;
 	if (!b)
 		return;
 	TFileName mbm = Application()->BitmapStoreName();
@@ -774,21 +828,47 @@ void CPpAppUi::ButtonPictureL(TInt aId, TInt aIcon)
 	b->LayoutComponentsL();
 	}
 
-// ClientRect() keeps the toolbar's width back even when it is hidden
+// (0.09) The toolbar for the machine PsiPDF runs on (the Coda sheet 2.2,
+// 2.13; the same choice as psion-core's psitbar.h, which the other
+// bundled programs use): the 5mx's 240 lines take r_pp_toolbar, buttons
+// of 37 and no page label; 480 lines take buttons of 50 and the page,
+// with, on Coda's image, Coda's battery, gauges and clock (r_pp_toolbar_coda).
+// Coda is told by Z:\System\Libs\PsiBattHook.bin, which the image has
+// only together with the hook in Eikon that makes those three controls.
+// EIK_APP_INFO has no toolbar: this one is iToolBar, which CEikAppUi owns.
+_LIT(KPpCodaHook, "Z:\\System\\Libs\\PsiBattHook.bin");
+void CPpAppUi::MakeToolBarL()
+	{
+	TSize screen = iEikonEnv->ScreenDevice()->SizeInPixels();
+	TInt res = R_PP_TOOLBAR;
+	if (screen.iHeight >= 400)
+		{
+		TEntry e;
+		res = iCoeEnv->FsSession().Entry(KPpCodaHook, e) == KErrNone ? R_PP_TOOLBAR_CODA : R_PP_TOOLBAR_NB;
+		}
+	CEikToolBar* bar = new(ELeave) CEikToolBar;
+	CleanupStack::PushL(bar);
+	bar->ConstructL(this, res, TRect(TPoint(0, 0), screen));
+	CleanupStack::Pop();
+	iToolBar = bar;
+	}
+
+// the view's room: the screen, less the toolbar's width when it is shown
 TRect CPpAppUi::ViewRect(TBool aToolbar) const
 	{
 	TRect r = ClientRect();
-	if (!aToolbar || !iToolBar)
-		r.iBr.iX = iEikonEnv->ScreenDevice()->SizeInPixels().iWidth;
+	r.iBr.iX = iEikonEnv->ScreenDevice()->SizeInPixels().iWidth;
+	if (aToolbar && Bar())
+		r.iBr.iX -= Bar()->Size().iWidth;
 	return r;
 	}
 
 void CPpAppUi::ShowToolBarL(TBool aShow)
 	{
-	if (!iToolBar)
+	if (!Bar())
 		return;
 	iToolbarShown = aShow;
-	iToolBar->MakeVisible(aShow);
+	Bar()->MakeVisible(aShow);
 	iView->SetRectL(ViewRect(aShow));
 	ClampOrigin();
 	iView->DrawNow();
@@ -940,10 +1020,10 @@ void CPpAppUi::EngineEnded()
 		DropPic(iAhead);
 		TBuf<100> why;
 		if (type == EExitPanic)
-			why = _L("MuPDF stopped - the file may be damaged");   // (the panic is in the log)
+			why = _L("The file may be damaged");   // (the panic is in the log)
 		else
-			why = _L("MuPDF stopped - there may not be enough memory");
-		CannotShow(_L("Could not show this page"), why);
+			why = _L("There may not be enough memory - close other programs");
+		CannotShow(_L("Cannot show this page"), why);
 		}
 	}
 
@@ -1019,9 +1099,9 @@ void CPpAppUi::Watchdog()
 	if (!wasOpen)
 		return;
 	TBool lowRam = FreeRamKb() < 3072;
-	CannotShow(_L("Could not show this page"), late ?
-		(lowRam ? _L("PsiPDF's engine did not start - close other programs") : _L("PsiPDF's engine did not start - another program may be busy")) :
-		(lowRam ? _L("PsiPDF's engine stopped answering - close other programs") : _L("PsiPDF's engine stopped answering - the page may be too complex")));
+	CannotShow(_L("Cannot show this page"), late ?
+		(lowRam ? _L("PsiPDF cannot start drawing - close other programs") : _L("PsiPDF cannot start drawing - another program may be busy")) :
+		(lowRam ? _L("PsiPDF stopped drawing - close other programs") : _L("PsiPDF stopped drawing - the page may be too complex")));
 	}
 
 void CPpAppUi::Send(TInt aCmd)
@@ -1083,7 +1163,7 @@ void CPpAppUi::Poll()
 			{
 			iFindAt = iS->find_at;
 			TBuf<32> t;
-			t.Format(_L("Finding... page %d"), iFindAt + 1);
+			t.Format(_L("Finding on page %d\x85"), iFindAt + 1);
 			Busy(t);
 			}
 		else if (iJob == PP_CMD_RENDER && iJobPic)
@@ -1188,8 +1268,7 @@ void CPpAppUi::JobDoneL(TInt aCmd)
 					iNote = _L("Drawing stopped");
 					iNoteWhy = _L("Enter draws this page again");
 					}
-				iView->DrawNow();
-				iEikonEnv->InfoMsg(_L("Stopped - Enter draws the page again"));
+				iView->DrawNow();   // (the page says it stopped: no infoprint as well)
 				break;
 				}
 			DropPic(*pic);               // (half a page: not kept)
@@ -1209,7 +1288,7 @@ void CPpAppUi::JobDoneL(TInt aCmd)
 				if (result == PP_E_MEMORY)
 					CannotShow(_L("Not enough memory to show this page"), _L("Close other programs, then try again"));
 				else
-					CannotShow(_L("Could not show this page"), _L("Part of it uses a feature PsiPDF does not have"));
+					CannotShow(_L("Cannot show this page"), _L("Part of it uses a feature PsiPDF does not have"));
 				}
 			else if (pic->iFailed)
 				PartDrawn(result);
@@ -1221,7 +1300,7 @@ void CPpAppUi::JobDoneL(TInt aCmd)
 				iFontTold = ETrue;
 				TBool missing = s->font_trouble == PP_FONT_MISSING;
 				Log(missing ? _L("fonts: PsiPDF.fnt not found") : _L("fonts: PsiPDF.fnt damaged"));
-				TPtrC what(missing ? _L("PsiPDF's font file not found") : _L("PsiPDF's font file is damaged"));
+				TPtrC what(missing ? _L("Part of PsiPDF is missing") : _L("Part of PsiPDF is damaged"));
 				TRAPD(err2, iEikonEnv->InfoWinL(what, _L("Some text shows in another typeface - install PsiPDF again")));
 				}
 			}
@@ -1339,7 +1418,7 @@ void CPpAppUi::PumpL()
 			iOpenPending = EFalse;
 			TBuf<80> why;
 			if (err == KErrNotFound || err == KErrPathNotFound)
-				why = _L("psipdf.exe is missing - install PsiPDF again");
+				why = _L("Part of PsiPDF is missing - install PsiPDF again");
 			else if (err == KErrNoMemory)
 				{
 				CannotShow(_L("Not enough memory to show this page"), _L("Close other programs, then open the file again"));
@@ -1347,13 +1426,13 @@ void CPpAppUi::PumpL()
 				}
 			else
 				{
-				why = _L("psipdf.exe did not start - ");
+				why = _L("PsiPDF cannot start drawing - ");
 				why.Append(PsiErrWords(err));
 				TBuf<48> l;
 				l.Format(_L("engine: not started (%d)"), err);
 				Log(l);
 				}
-			CannotShow(_L("Could not show this page"), why);
+			CannotShow(_L("Cannot show this page"), why);
 			}
 		return;
 		}
@@ -1367,7 +1446,7 @@ void CPpAppUi::PumpL()
 		if (iJob == PP_CMD_RENDER && iJobPic == &iAhead && AheadIsWanted())
 			{
 			SwapPics();
-			Busy(_L("Drawing page..."));
+			Busy(_L("Drawing the page\x85"));
 			iView->DrawNow();
 			}
 		if (!WantJob() && !iStopping)
@@ -1413,7 +1492,7 @@ void CPpAppUi::PumpL()
 		TBuf<100> l;
 		l.Format(_L("memory: free RAM %d KB: store %d KB, pages up to %d KB"), free, iStoreKb, iMaxBytes / 1024);
 		Log(l);
-		Busy(_L("Opening..."));
+		Busy(_L("Opening\x85"));
 		Send(PP_CMD_OPEN);
 		return;
 		}
@@ -1499,7 +1578,7 @@ void CPpAppUi::PumpL()
 			iJobPic = &iShown;
 			iNote.Zero();                    // (a page that could not be shown before: tried afresh)
 			iNoteWhy.Zero();
-			Busy(_L("Drawing page..."));
+			Busy(_L("Drawing the page\x85"));
 			Send(PP_CMD_RENDER);
 			UpdateLabelL();
 			iView->DrawNow();
@@ -1567,7 +1646,7 @@ void CPpAppUi::OpenPdfL(const TDesC& aName)
 	iNote.Zero();
 	iNoteWhy.Zero();
 	iOpenPending = ETrue;
-	Busy(_L("Opening..."));             // (at once: the engine may take a moment to start)
+	Busy(_L("Opening\x85"));             // (at once: the engine may take a moment to start)
 	// its page and zoom from last time
 	iPage = 0;
 	iZoom = EZoomFitWidth;
@@ -1801,7 +1880,7 @@ void CPpAppUi::GoToPageL(TInt aPage, TBool aAtFoot)
 	UpdateLabelL();
 	PumpSoon();
 	iView->DrawNow();
-	if (!iToolbarShown)
+	if (!iToolbarShown || !Bar() || !Bar()->ControlById(EPpCmdPageLabel))   // (the 5mx's toolbar has no page label)
 		{
 		TBuf<32> t;
 		t.Format(_L("Page %d of %d"), iPage + 1, iPages);
@@ -1870,12 +1949,12 @@ void CPpAppUi::ZoomStepL(TInt aDir)
 
 void CPpAppUi::UpdateLabelL()
 	{
-	if (!iToolBar)
+	if (!Bar())
 		return;
-	CEikFileNameLabel* fl = (CEikFileNameLabel*)iToolBar->ControlById(EPpCmdFileName);
+	CEikFileNameLabel* fl = (CEikFileNameLabel*)Bar()->ControlById(EPpCmdFileName);
 	if (fl)
 		fl->UpdateL();
-	CEikLabel* l = (CEikLabel*)iToolBar->ControlById(EPpCmdPageLabel);
+	CEikLabel* l = (CEikLabel*)Bar()->ControlById(EPpCmdPageLabel);
 	if (!l)
 		return;
 	TBuf<32> t;
@@ -1898,7 +1977,8 @@ void CPpAppUi::DrawPage(CWindowGc& aGc, const TRect& /*aRect*/) const
 	TBool nothing = iShown.iDone && iShown.iFailed && iShown.iRows == 0 && iNote.Length();
 	if (!iShown.iBmp || iShown.iPage != iPage || nothing)
 		{
-		aGc.SetBrushColor(back);
+		// (0.09) the workspace's white, as the other programs' empty views
+		aGc.SetBrushColor(KRgbWhite);
 		aGc.DrawRect(v);
 		TPtrC line1, line2;
 		if (iNote.Length() && !iOpenPending)
@@ -1909,19 +1989,25 @@ void CPpAppUi::DrawPage(CWindowGc& aGc, const TRect& /*aRect*/) const
 		else if (!iOpen && !iOpenPending)
 			{
 			line1.Set(_L("No file open"));
-			line2.Set(_L("Ctrl+O opens a PDF file"));
+			line2.Set(_L("Tap a PDF file on the System screen, or open one with Ctrl+O"));
 			}
 		if (line1.Length())
 			{
+			// two centred lines, the first bold (the Coda sheet's empty state)
 			const CFont* f = iEikonEnv->NormalFont();
-			aGc.UseFont(f);
+			CFont* bold = PpBoldFont();
 			aGc.SetPenStyle(CGraphicsContext::ESolidPen);
 			aGc.SetPenColor(KRgbBlack);
 			aGc.SetBrushStyle(CGraphicsContext::ENullBrush);
 			TInt base = v.iTl.iY + v.Height() / 2;
-			aGc.DrawText(line1, TRect(v.iTl.iX, base - 20, v.iBr.iX, base), f->AscentInPixels() + 2, CGraphicsContext::ECenter);
-			aGc.DrawText(line2, TRect(v.iTl.iX, base, v.iBr.iX, base + 20), f->AscentInPixels() + 2, CGraphicsContext::ECenter);
+			const CFont* f1 = bold ? bold : f;
+			aGc.UseFont(f1);
+			aGc.DrawText(line1, TRect(v.iTl.iX, base - 22, v.iBr.iX, base), f1->AscentInPixels() + 2, CGraphicsContext::ECenter);
+			aGc.UseFont(f);
+			aGc.DrawText(line2, TRect(v.iTl.iX, base + 2, v.iBr.iX, base + 24), f->AscentInPixels() + 2, CGraphicsContext::ECenter);
 			aGc.DiscardFont();
+			if (bold)
+				iEikonEnv->ScreenDevice()->ReleaseFont(bold);
 			}
 		return;
 		}
@@ -2189,7 +2275,7 @@ void CPpAppUi::StartFind(TInt aFromPage)
 			iS->cookie.abort = 1;
 			iStopping = ETrue;
 			}
-		Busy(_L("Finding..."));
+		Busy(_L("Finding\x85"));
 		return;
 		}
 	iFindPending = 0;
@@ -2197,7 +2283,7 @@ void CPpAppUi::StartFind(TInt aFromPage)
 	iFindAt = -1;
 	iS->page = aFromPage;
 	ToUtf8(iS->text, sizeof(iS->text), iFindText);
-	Busy(_L("Finding..."));
+	Busy(_L("Finding\x85"));
 	Send(PP_CMD_FIND);
 	}
 
@@ -2234,7 +2320,7 @@ TBool CPpAppUi::NoFile()
 	{
 	if (iOpen)
 		return EFalse;
-	iEikonEnv->InfoMsg(iOpenPending ? _L("Not available while opening") : _L("No file open"));
+	iEikonEnv->InfoMsg(iOpenPending ? _L("Not available - the file is still opening") : _L("No file open"));
 	return ETrue;
 	}
 
@@ -2248,33 +2334,53 @@ void CPpAppUi::GoToL()
 		GoToPageL(page - 1);
 	}
 
+// a size as the Coda sheet writes it: "768 bytes", "2 KB", "19.8 MB"
+static void FormatSize(TDes& aOut, TInt aBytes)
+	{
+	if (aBytes < 1024)
+		aOut.Format(_L("%d bytes"), aBytes);
+	else if (aBytes < 1024 * 1024)
+		aOut.Format(_L("%d KB"), (aBytes + 1023) / 1024);
+	else
+		{
+		TInt tenths = ((aBytes / 1024) * 10 + 512) / 1024;   // (in range: a file is under 2 GB)
+		if (tenths >= 100)
+			aOut.Format(_L("%d MB"), (tenths + 5) / 10);
+		else
+			aOut.Format(_L("%d.%d MB"), tenths / 10, tenths % 10);
+		}
+	}
+
+// File > File details: Name, Title, Pages, Size and Folder, each on its
+// own line with its prompt (a fixed width: long ones shortened with "...")
 void CPpAppUi::DetailsL()
 	{
 	if (NoFile())
 		return;
 	TParsePtrC p(iFile);
-	TBuf<40> l1, title, l2, l3, l4;
+	TBuf<40> l1, l2, l3, l4, l5;
 	Shorten(l1, p.NameAndExt(), 36);
 	TBuf<128> t;
 	FromUtf8(t, iTitle);
+	t.TrimAll();
 	if (t.Length())
-		{
-		Shorten(title, t, 30);
-		l2.Format(_L("Title: %S"), &title);
-		}
+		Shorten(l2, t, 36);
 	else
-		l2 = _L("No title");
-	TEntry e;
-	TInt kb = iCoeEnv->FsSession().Entry(iFile, e) == KErrNone ? (e.iSize + 1023) / 1024 : 0;
+		l2 = _L("(none)");
 	if (iPages == 1)
-		l3.Format(_L("1 page, %d KB"), kb);
+		l3 = _L("1");
 	else
-		l3.Format(_L("%d pages, %d KB"), iPages, kb);
-	if (iShown.iDone && !iShown.iFailed && iShown.iPage == iPage)
-		l4.Format(_L("Page %d drawn in %d.%02d s"), iPage + 1, iShown.iMs / 1000, iShown.iMs % 1000 / 10);
+		l3.Num(iPages);
+	TEntry e;
+	if (iCoeEnv->FsSession().Entry(iFile, e) == KErrNone)
+		FormatSize(l4, e.iSize);
 	else
-		l4.Format(_L("Opened in %d.%02d s"), iOpenMs / 1000, iOpenMs % 1000 / 10);
-	CEikDialog* d = new(ELeave) CPpDetailsDialog(l1, l2, l3, l4);
+		l4 = _L("-");
+	TPtrC dir(p.DriveAndPath());
+	if (dir.Length() > 1 && dir[dir.Length() - 1] == '\\')
+		dir.Set(dir.Left(dir.Length() - 1));
+	Shorten(l5, dir, 36);
+	CEikDialog* d = new(ELeave) CPpDetailsDialog(l1, l2, l3, l4, l5);
 	d->ExecuteLD(R_PP_DETAILS_DIALOG);
 	}
 
@@ -2284,7 +2390,16 @@ void CPpAppUi::HandleCommandL(TInt aCommand)
 		{
 	case EPpCmdOpen:
 		{
+		// (0.09) the first time (no file yet), the card's Example files
+		// folder when it is there: it has PDF files to try
+		_LIT(KPpExamples, "D:\\Documents\\Example files");
 		TFileName name = iFile.Length() ? iFile : TFileName(_L("C:\\Documents\\"));
+		TEntry ex;
+		if (!iFile.Length() && !iRecentCount && iCoeEnv->FsSession().Entry(KPpExamples, ex) == KErrNone && ex.IsDir())
+			{
+			name = KPpExamples;
+			name.Append('\\');
+			}
 		CEikFileOpenDialog* d = new(ELeave) CEikFileOpenDialog(&name, R_PP_OPEN_TITLE);
 		_LIT(KPdf, ".pdf");
 		d->SetRequiredExtension(&KPdf);
@@ -2315,13 +2430,12 @@ void CPpAppUi::HandleCommandL(TInt aCommand)
 		iKeepLog = !iKeepLog;
 		iLogOn = ETrue;
 		if (iKeepLog)
-			Log(_L("log: kept from here (Tools > Keep a log)"));
+			Log(_L("log: kept from here (Tools > Troubleshooting > Keep a log)"));
 		iLogOn = iKeepLog || iDiagOn;
-		SaveSettings();
-		iEikonEnv->InfoMsg(iKeepLog ? _L("Keeping a log") : _L("Not keeping a log"));
+		SaveSettings();             // (the tick says so: no infoprint)
 		break;
 	case EPpCmdHelp:
-		PsiHelpL(KPpHelp, sizeof(KPpHelp) / sizeof(KPpHelp[0]), _L("Help on PsiPDF"), R_PSI_HELP_DIALOG);
+		PsiHelpL(KPpHelp, sizeof(KPpHelp) / sizeof(KPpHelp[0]), _L("Help on PsiPDF"), R_PSI_HELP_DIALOG, R_PSI_HELP_DIALOG_TALL);
 		break;
 	case EPpCmdAbout:
 		(new(ELeave) CPpAboutDialog)->ExecuteLD(R_PP_ABOUT_DIALOG);
@@ -2358,7 +2472,7 @@ void CPpAppUi::DynInitMenuPaneL(TInt aMenuId, CEikMenuPane* aMenuPane)
 		aMenuPane->SetItemDimmed(EPpCmdZoomOut, !open);
 		aMenuPane->SetItemButtonState(EPpCmdToolbar, iToolbarShown ? EEikMenuItemSymbolOn : EEikMenuItemSymbolIndeterminate);
 		}
-	else if (aMenuId == R_PP_TOOLS_MENU)
+	else if (aMenuId == R_PP_TROUBLE_MENU)
 		aMenuPane->SetItemButtonState(EPpCmdKeepLog, iKeepLog ? EEikMenuItemSymbolOn : EEikMenuItemSymbolIndeterminate);
 	else if (aMenuId == R_PP_ZOOM_MENU)
 		{
@@ -2404,7 +2518,7 @@ void CPpAppUi::Problem(const TDesC& aWhat, TInt aResult)
 // stopped the reading)
 void CPpAppUi::PartDrawn(TInt aResult)
 	{
-	TPtrC what(aResult == PP_E_MEMORY ? _L("Not enough memory to show all of this page") : _L("Cannot draw all of this page"));
+	TPtrC what(aResult == PP_E_MEMORY ? _L("Not enough memory to show all of this page") : _L("Cannot show all of this page"));
 	if (aResult == PP_E_MEMORY)
 		TellShort();
 	if (iPartTold)
@@ -2425,9 +2539,9 @@ void CPpAppUi::PartDrawn(TInt aResult)
 		if (m.Find(_L("jbig2")) >= 0 || m.Find(_L("jpx")) >= 0)
 			why.Set(_L("A picture in it is in a form PsiPDF cannot read"));
 		else if (m.Find(_L("font")) >= 0)
-			why.Set(_L("A font in it could not be read"));
+			why.Set(_L("A font in it cannot be read"));
 		else if (m.Find(_L("image")) >= 0)
-			why.Set(_L("A picture in it could not be read"));
+			why.Set(_L("A picture in it cannot be read"));
 		else if (m.Find(_L("syntax")) >= 0 || m.Find(_L("xref")) >= 0 || m.Find(_L("object")) >= 0 || m.Find(_L("repair")) >= 0)
 			why.Set(_L("Part of the file is damaged"));
 		else

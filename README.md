@@ -1,6 +1,6 @@
 # PsiPDF
 
-PDF files on the **Psion netBook** and the **Psion Series 5mx** (EPOC Release 5), drawn by [MuPDF](https://mupdf.com/). Version 0.04 (not released yet; the download is 0.01).
+PDF files on the **Psion netBook** and the **Psion Series 5mx** (EPOC Release 5), drawn by [MuPDF](https://mupdf.com/). Version 0.09.
 
 PsiPDF opens a PDF from the System screen, from PsiHub or with File > Open, and shows its first page (or the page you left it at) fitted to the width of the screen. It draws real PDF files: embedded fonts, the 14 standard fonts, colour, lines and fills, and JPEG photos. On the netBook pages show in EPOC's 256 colours, error-diffused; on the 5mx in 16 greys.
 
@@ -23,31 +23,31 @@ PsiPDF opens a PDF from the System screen, from PsiHub or with File > Open, and 
 |---|---|---|
 | Open a PDF | Ctrl+O | tap it on the System screen or in PsiHub |
 | Next page | Fn+Down (Page down) | Shift+Ctrl+N, the toolbar's Next, the bottom-right dog-ear, Space at the foot of a page, Down at the foot of a page |
-| Previous page | Fn+Up (Page up) | Shift+Ctrl+B, the toolbar's Previous, the bottom-left dog-ear, Backspace at the head of a page |
+| Previous page | Fn+Up (Page up) | Shift+Ctrl+B, the toolbar's Back, the bottom-left dog-ear, Backspace at the head of a page |
 | First or last page | Ctrl+Fn+Up, Ctrl+Fn+Down | View > First page, Last page |
 | Go to a page | Ctrl+G | Edit > Go to page |
 | Zoom in or out | Ctrl+M, Shift+Ctrl+M | the toolbar; the zooms go round: fit page, fit width, 100%, 150%, 200% |
-| Fit the width (the standard) | Ctrl+W | View > Zoom > Fit width |
-| Fit the page | Shift+Ctrl+W | View > Zoom > Fit page |
+| Fit the width (a file opens so) | Ctrl+W | View > Zoom to > Fit width |
+| Fit the page | Shift+Ctrl+W | View > Zoom to > Fit page |
 | Move round the page | the arrow keys (Ctrl: a screen at a time) | drag with the pen |
 | Top or foot of the page | Fn+Left (Home), Fn+Right (End) | |
 | Find text | Ctrl+F, then Ctrl+J for the next | Edit > Find, Find next |
 | Stop drawing or finding | Esc | the page stays as far as it was drawn; Enter draws it again (and a page not all drawn) |
 | Show or hide the toolbar | Ctrl+T | View > Show toolbar |
 | File details | Shift+Ctrl+D | File > File details |
-| Keep a log | | Tools > Keep a log |
+| Keep a log | | Tools > Troubleshooting > Keep a log |
 | Help | Shift+Ctrl+H | Tools > Help on PsiPDF |
 | About PsiPDF | Shift+Ctrl+A | Tools > About PsiPDF |
 
-100% is the page at its real size on the screen in use. The toolbar shows the page ("Page 3 of 12"); with it hidden, an infoprint says the page when it changes.
+100% is the page at its real size on the screen in use. On the netBook the toolbar shows the page ("Page 3 of 12") under its buttons, and on Coda's image Coda's battery, gauges and clock below that, as in Psion's own programs; on the 5mx, whose toolbar has room only for the buttons and the clock, and with the toolbar hidden, an infoprint says the page when it changes.
 
-The page appears as it is drawn, from the top down, with "Drawing page..." bottom left. While you read it, PsiPDF draws the next page ahead (when it is fitted to the width or the page, and there is memory to spare), so turning the page is immediate.
+The page appears as it is drawn, from the top down, with "Drawing the page…" bottom left. While you read it, PsiPDF draws the next page ahead (when it is fitted to the width or the page, and there is memory to spare), so turning the page is immediate.
 
 Left behind other programs for five minutes with a file open, PsiPDF stops its engine (MuPDF, 3 to 9 MB with its code), keeping the page on the screen; coming back to it opens the file again at the same page and zoom.
 
 PsiPDF remembers the last eight files with their page and zoom, and opens the last file again when started from its icon (`C:\System\Apps\PsiPDF\PsiPDF.ini`), unless its page could not be shown last time (it ran out of memory or stopped the engine): then it waits for Ctrl+O. A file that needs a password asks for it.
 
-A page that cannot be shown says so, in a dialog and in its place on the screen ("Could not show this page", "Not enough memory to show this page", "This page is too big to show"), never a blank page. A page drawn only in part says so in a dialog the first time in a file, then in an infoprint. With Tools > Keep a log ticked (or Coda's debug mode on: Control panel > Diagnostics), PsiPDF keeps a log of each session in `C:\System\Apps\PsiPDF\PsiPDF.log` (on the internal disk, wherever PsiPDF is installed), and the session before in `PsiPDF.old`: send both with a report. Without it, no log is written. A session that never showed its page has `engine: started` with no `engine: ready` after it.
+A page that cannot be shown says so, in a dialog and in its place on the screen ("Cannot show this page", "Not enough memory to show this page", "This page is too big to show"), never a blank page. A page drawn only in part says so in a dialog the first time in a file, then in an infoprint. With Tools > Troubleshooting > Keep a log ticked (or Coda's debug mode on: Control panel > Diagnostics), PsiPDF keeps a log of each session in `C:\System\Apps\PsiPDF\PsiPDF.log` (on the internal disk, wherever PsiPDF is installed), and the session before in `PsiPDF.old`: send both with a report. Without it, no log is written. A session that never showed its page has `engine: started` with no `engine: ready` after it.
 
 | | |
 |---|---|

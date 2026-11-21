@@ -7,7 +7,8 @@
 // what is not obvious.
 //
 //   static const TPsiHelpTopic KHelp[] = { { "Getting started", "..." }, ... };
-//   PsiHelpL(KHelp, sizeof(KHelp) / sizeof(KHelp[0]), _L("Help on PsiFiles"), R_PSI_HELP_DIALOG);
+//   PsiHelpL(KHelp, sizeof(KHelp) / sizeof(KHelp[0]), _L("Help on PsiFiles"), R_PSI_HELP_DIALOG,
+//            R_PSI_HELP_DIALOG_TALL);   // (the second on 480 lines: optional)
 //
 // In the text, '\n' starts a new paragraph; the topic's title is shown bold
 // at the top. ASCII only (the copyright sign and the like as in About).
@@ -18,6 +19,7 @@
 #include <eikdialg.h>
 #include <eikchlst.h>
 #include <eikrted.h>
+#include <eiksbfrm.h>
 #include <txtrich.h>
 #include <badesca.h>
 #include "psihelp.hrh"
@@ -62,6 +64,11 @@ inline void CPsiHelpDialog::PreLayoutDynInitL()
 		titles->AppendL(t);
 		}
 	CleanupStack::Pop();
+	// a scroll bar: the topics are longer than the box (PsiPDF 0.09)
+	CEikRichTextEditor* ed = (CEikRichTextEditor*)Control(EPsiHelpText);
+	CEikScrollBarFrame* sb = ed->CreateScrollBarFrameL();
+	if (sb)
+		sb->SetScrollBarVisibilityL(CEikScrollBarFrame::EOff, CEikScrollBarFrame::EAuto);
 	CEikChoiceList* cl = (CEikChoiceList*)Control(EPsiHelpTopic);
 	cl->SetArrayL(titles);
 	iTopic = 0;
@@ -105,9 +112,12 @@ inline void CPsiHelpDialog::HandleControlStateChangeL(TInt aControlId)
 	}
 
 // the dialog, run to its end
-inline void PsiHelpL(const TPsiHelpTopic* aTopics, TInt aCount, const TDesC& aTitle, TInt aResource)
+// (the tall resource, when given, on a screen of 400 lines or more)
+inline void PsiHelpL(const TPsiHelpTopic* aTopics, TInt aCount, const TDesC& aTitle, TInt aResource, TInt aTallResource = 0)
 	{
 	CEikDialog* d = new(ELeave) CPsiHelpDialog(aTopics, aCount, aTitle);
+	if (aTallResource && CEikonEnv::Static()->ScreenDevice()->SizeInPixels().iHeight >= 400)
+		aResource = aTallResource;
 	d->ExecuteLD(aResource);
 	}
 

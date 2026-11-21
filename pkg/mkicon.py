@@ -89,24 +89,66 @@ def app_icon(n):
     return im, mk
 
 
+OUTLINE, SHADOW, PAPER, FOLD, TEXT = (51, 51, 51), (153, 153, 153), (255, 255, 255), (204, 204, 204), (153, 153, 153)
+ARROW, ARROW_LIGHT, ARROW_DARK = (0, 102, 204), (51, 153, 255), (0, 51, 102)
+LENS, LENS_LIGHT, HANDLE, SIGN = (204, 204, 255), (255, 255, 255), (153, 102, 51), (0, 51, 102)
+KEY = (255, 0, 255)                     # (not drawn: the mask's hole)
+
+
 def tool(kind):
-    """a toolbar picture: Previous and Next 16 x 20 (room for their words in
-    the toolbar's dense font), Zoom in and out 24 x 20"""
+    """a toolbar picture, 24 x 20, in Coda's icon recipe (0.09): 1-pixel
+    outlines in 333333, flat fills from the 6x6x6 cube with a lighter
+    top-left and a darker bottom-right edge, a 1-pixel shadow in 999999.
+    Previous and Next: a page with a blue arrow up or down over its right
+    side; Zoom in and out: a magnifier with + or -."""
+    im = Image.new('RGB', (24, 20), KEY)
+    d = ImageDraw.Draw(im)
     if kind in ('prev', 'next'):
-        im, mk, d, m = canvas(16, 20)
-        # a page's corner with an arrow: up for the page before, down for the next
-        pts = [(2, 12), (8, 5), (14, 12)] if kind == 'prev' else [(2, 8), (8, 15), (14, 8)]
-        for dd, col in ((d, BLUE), (m, 0)):
-            dd.polygon(pts, fill=col, outline=0 if dd is m else BLACK)
-            dd.rectangle([5, 12, 11, 17] if kind == 'prev' else [5, 3, 11, 8], fill=col, outline=0 if dd is m else BLACK)
-        return im, mk
-    im, mk, d, m = canvas(24, 20)
-    for dd, mm in ((d, False), (m, True)):
-        dd.ellipse([3, 1, 16, 14], fill=0 if mm else WHITE, outline=0 if mm else BLACK, width=2)
-        dd.line([(14, 12), (20, 18)], fill=0 if mm else DARK, width=3)
-    d.line([(6, 7), (13, 7)], fill=BLACK, width=2)
-    if kind == 'zin':
-        d.line([(9, 4), (9, 11)], fill=BLACK, width=2)
+        # the page: shadow, paper, the turned corner, lines of text
+        d.polygon([(3, 3), (10, 3), (13, 6), (13, 19), (3, 19)], fill=SHADOW)
+        d.polygon([(2, 2), (9, 2), (12, 5), (12, 18), (2, 18)], fill=PAPER, outline=OUTLINE)
+        d.polygon([(9, 2), (9, 5), (12, 5)], fill=FOLD, outline=OUTLINE)
+        for y in (8, 11, 14):
+            d.line([(4, y), (9, y)], fill=TEXT)
+        # the arrow: a head and a shaft
+        if kind == 'prev':
+            head, shaft = [(9, 10), (16, 3), (23, 10)], [13, 10, 19, 17]
+        else:
+            head, shaft = [(9, 10), (16, 17), (23, 10)], [13, 3, 19, 10]
+        sh = lambda pts: [(x + 1, y + 1) for x, y in pts]
+        d.polygon(sh(head), fill=SHADOW)
+        d.rectangle([shaft[0] + 1, shaft[1] + 1, shaft[2] + 1, shaft[3] + 1], fill=SHADOW)
+        d.rectangle(shaft, fill=ARROW, outline=OUTLINE)
+        d.polygon(head, fill=ARROW, outline=OUTLINE)
+        # the light and dark edges, inside the outline
+        if kind == 'prev':
+            d.line([(11, 9), (16, 4)], fill=ARROW_LIGHT)
+            d.line([(14, 11), (14, 16)], fill=ARROW_LIGHT)
+            d.line([(18, 11), (18, 16)], fill=ARROW_DARK)
+        else:
+            d.line([(14, 4), (14, 10)], fill=ARROW_LIGHT)
+            d.line([(18, 4), (18, 10)], fill=ARROW_DARK)
+            d.line([(17, 15), (21, 11)], fill=ARROW_DARK)
+        # (the arrow's head drawn over the page's edge: the outline again)
+        d.polygon(head, outline=OUTLINE)
+    else:
+        # the handle, then the lens over it
+        d.line([(15, 13), (21, 19)], fill=SHADOW, width=4)
+        d.line([(14, 12), (20, 18)], fill=OUTLINE, width=4)
+        d.line([(14, 12), (20, 18)], fill=HANDLE, width=2)
+        d.ellipse([3, 2, 17, 16], fill=SHADOW)
+        d.ellipse([2, 1, 16, 15], fill=LENS, outline=OUTLINE)
+        d.arc([4, 3, 14, 13], 160, 260, fill=LENS_LIGHT)
+        d.line([(5, 8), (13, 8)], fill=SIGN, width=2)
+        if kind == 'zin':
+            d.line([(9, 4), (9, 12)], fill=SIGN, width=2)
+    mk = Image.new('1', (24, 20), 1)
+    for y in range(20):
+        for x in range(24):
+            if im.getpixel((x, y)) == KEY:
+                im.putpixel((x, y), WHITE)
+            else:
+                mk.putpixel((x, y), 0)
     return im, mk
 
 

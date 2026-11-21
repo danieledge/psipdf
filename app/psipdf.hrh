@@ -6,28 +6,28 @@
 
 enum TPpCommandIds
 	{
-	EPpCmdOpen = 0x1000,        // File > Open file... (Ctrl+O)
-	EPpCmdDetails,              // File > File details... (Shift+Ctrl+D)
-	EPpCmdFind,                 // Edit > Find... (Ctrl+F)
+	EPpCmdOpen = 0x1000,        // File > Open file (Ctrl+O)
+	EPpCmdDetails,              // File > File details (Shift+Ctrl+D)
+	EPpCmdFind,                 // Edit > Find (Ctrl+F)
 	EPpCmdFindNext,             // Edit > Find next (Ctrl+J)
-	EPpCmdGoTo,                 // Edit > Go to page... (Ctrl+G)
+	EPpCmdGoTo,                 // Edit > Go to page (Ctrl+G)
 	EPpCmdNext,                 // View > Next page (Shift+Ctrl+N, Fn+Down, toolbar)
 	EPpCmdPrev,                 // View > Previous page (Shift+Ctrl+B, Fn+Up, toolbar)
 	EPpCmdFirst,                // View > First page (Ctrl+Fn+Up)
 	EPpCmdLast,                 // View > Last page (Ctrl+Fn+Down)
 	EPpCmdZoomIn,               // View > Zoom in (Ctrl+M)
 	EPpCmdZoomOut,              // View > Zoom out (Shift+Ctrl+M)
-	EPpCmdFitWidth,             // View > Zoom > Fit width (Ctrl+W)
-	EPpCmdFitPage,              // View > Zoom > Fit page (Shift+Ctrl+W)
-	EPpCmdZoom100,              // View > Zoom > 100%
-	EPpCmdZoom150,              // View > Zoom > 150%
-	EPpCmdZoom200,              // View > Zoom > 200%
+	EPpCmdFitWidth,             // View > Zoom to > Fit width (Ctrl+W)
+	EPpCmdFitPage,              // View > Zoom to > Fit page (Shift+Ctrl+W)
+	EPpCmdZoom100,              // View > Zoom to > 100%
+	EPpCmdZoom150,              // View > Zoom to > 150%
+	EPpCmdZoom200,              // View > Zoom to > 200%
 	EPpCmdToolbar,              // View > Show toolbar (Ctrl+T)
 	EPpCmdAbout,                // Tools > About PsiPDF (Shift+Ctrl+A)
 	EPpCmdFileName,             // the toolbar's file name
 	EPpCmdPageLabel,            // the toolbar's "Page 3 of 12"
 	EPpCmdHelp,                 // Tools > Help on PsiPDF (Shift+Ctrl+H)
-	EPpCmdKeepLog               // Tools > Keep a log
+	EPpCmdKeepLog               // Tools > Troubleshooting > Keep a log
 	};
 
 enum TPpDialogIds
@@ -38,13 +38,14 @@ enum TPpDialogIds
 	EPpDlgPassword,             // Password: the password
 	EPpDlgPasswordFile,         // Password: the file's name
 	EPpDlgAboutName,            // About: the name and version
-	EPpDlgAboutText,            // About: what it does, and the copyright line
+	EPpDlgAboutCopy,            // About: the copyright line
 	EPpDlgAboutMuPdf,           // About: MuPDF's line
-	EPpDlgAboutSource,          // About: where the source is
+	EPpDlgAboutSymbian,         // About: Symbian's line
 	EPpDlgDetails1,             // File details: its lines
 	EPpDlgDetails2,
 	EPpDlgDetails3,
-	EPpDlgDetails4
+	EPpDlgDetails4,
+	EPpDlgDetails5
 	};
 
 #endif
