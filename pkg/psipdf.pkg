@@ -4,7 +4,7 @@
 &EN
 ; Two-digit versions, as Dan Edge's other programs: the EPOC installer
 ; compares major.minor only.
-#{"PsiPDF"},(0x01000AD8),0,12,0
+#{"PsiPDF"},(0x01000AD8),0,13,0
 "psipdf.app"-"!:\System\Apps\PsiPDF\PsiPDF.app"
 "psipdf.rsc"-"!:\System\Apps\PsiPDF\PsiPDF.rsc"
 "psipdf.aif"-"!:\System\Apps\PsiPDF\PsiPDF.aif"

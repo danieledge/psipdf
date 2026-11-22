@@ -45,7 +45,14 @@ enum TPpDialogIds
 	EPpDlgDetails2,
 	EPpDlgDetails3,
 	EPpDlgDetails4,
-	EPpDlgDetails5
+	EPpDlgDetails5,
+	EPpDlgMemoryWhat,           // (0.13) Not enough memory: what could not be shown
+	EPpDlgMemoryWhy             // ...and what to do
+	};
+
+enum TPpButtonIds
+	{
+	EPpBidFreeMemory = 100      // (0.13) Not enough memory: Coda's Free memory
 	};
 
 #endif

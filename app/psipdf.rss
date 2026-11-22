@@ -384,6 +384,32 @@ RESOURCE DIALOG r_pp_about_dialog
 		};
 	}
 
+// (0.13) Not enough memory for a page, where Coda's Free memory (PsiHub)
+// runs: what, then what to do; "Free memory..." opens
+// Coda's dialog, Continue (Enter, Esc) goes back to the page, which is
+// shown by itself when there is room
+RESOURCE DIALOG r_pp_memory_dialog
+	{
+	title="Not enough memory";
+	flags=EEikDialogFlagWait;
+	buttons=r_pp_memory_buttons;
+	items=
+		{
+		// (reserve_length: SetTextL writes into a label's own buffer)
+		DLG_LINE { type=EEikCtLabel; id=EPpDlgMemoryWhat; control=LABEL { horiz_align=EEikLabelAlignHLeft; reserve_length=48; txt="-"; }; },
+		DLG_LINE { type=EEikCtLabel; id=EPpDlgMemoryWhy; control=LABEL { horiz_align=EEikLabelAlignHLeft; standard_font=EEikLabelFontAnnotation; reserve_length=80; txt="-"; }; }
+		};
+	}
+
+RESOURCE DLG_BUTTONS r_pp_memory_buttons
+	{
+	buttons=
+		{
+		DLG_BUTTON { id=EPpBidFreeMemory; button=CMBUT { txt="Free memory"<0x85>; }; hotkey='F'; },
+		DLG_BUTTON { id=EEikBidOk; button=CMBUT { txt="Continue"; }; hotkey=EEikBidOk; flags=0; }
+		};
+	}
+
 RESOURCE TBUF r_pp_open_title { buf="Open PDF file"; }
 
 // Tools > Help on PsiPDF (Shift+Ctrl+H): the topics are in psipdf.cpp

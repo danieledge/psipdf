@@ -46,6 +46,7 @@
 #include <eikon.rsg>
 #include <eikcfdlg.h>
 #include <eikcmds.hrh>
+#include <eikdialg.hrh>
 #include <eikmenu.hrh>
 #include <eikdialg.h>
 #include <eikedwin.h>
@@ -65,7 +66,7 @@
 #include "psierr.h"                  // an error as words for a message (0.12: psion-core's, build.sh copies it)
 
 const TUid KUidPsiPdf = { 0x01000AD8 };
-_LIT(KPpVersion, "0.12");
+_LIT(KPpVersion, "0.13");
 _LIT(KPpIni, "C:\\System\\Apps\\PsiPDF\\PsiPDF.ini");
 _LIT(KPpLog, "C:\\System\\Apps\\PsiPDF\\PsiPDF.log");
 _LIT(KPpLogOld, "C:\\System\\Apps\\PsiPDF\\PsiPDF.old");
@@ -95,7 +96,8 @@ static const TPsiHelpTopic KPpHelp[] =
 	  "A page appears as it is drawn, from the top down. Esc stops the drawing; Enter draws the page "
 	  "again. While you read, PsiPDF draws the next page ahead if there is the memory.\n\n"
 	  "A page that cannot be shown says why, on the screen. Pages with many pictures need the most "
-	  "memory: close other programs and press Enter.\n\n"
+	  "memory: one there was not enough memory for is shown by itself once memory is free (on Coda, "
+	  "the message's Free memory button helps), or at once with a tap or Enter.\n\n"
 	  "Tools > Troubleshooting > Keep a log writes what PsiPDF does to a log, to send with a "
 	  "question about a problem." },
 	};
@@ -134,6 +136,12 @@ const TInt KPpAheadSpare = 3 * 1024 * 1024;
 // its code) is stopped, and the file opened again, at the same page and
 // zoom, when PsiPDF comes back; the page on the screen is kept meanwhile
 const TInt KPpIdleStop = 5 * 60 * 1000000;
+// (0.13) a page that could not be shown for want of memory is tried again
+// by itself when memory comes back: looked at every 2 s while PsiPDF is in
+// front, tried once the memory service's level has dropped or this much
+// more is free than when it failed (on a Psion with no service)
+const TInt KPpMemLookUs = 2000000;
+const TInt KPpMemRetryKb = 1024;
 // MuPDF draws a page in bands of about this much RGBA: on the netBook 512 KB
 // (200 rows 640 wide, a quarter of a fitted A4 page, where the whole page's
 // pixmap would be 2.3 MB), on the 5mx, with half the memory, 160 KB (64
@@ -176,6 +184,7 @@ struct TPpRecentFile
 	};
 
 class CPpAppUi;
+class CPpMemoryDialog;             // (0.13) Not enough memory, with Free memory...
 
 // ---------------------------------------------------------------------------
 // The page on the screen
@@ -303,6 +312,14 @@ private:
 	void TellShort();
 	// a page that cannot be shown: said in the dialog and on the page itself
 	void CannotShow(const TDesC& aWhat, const TDesC& aWhy);
+	// (0.13) not enough memory for the page: said, and tried again when
+	// memory comes back (MemRetry), at the next return to the front or a tap
+	enum TPpMemShort { EPpMemNone, EPpMemPage, EPpMemOpen };
+	void MemoryShort(TInt aKind, const TDesC& aWhat);
+	void MemoryDialog(const TDesC& aWhat, const TDesC& aWhy);
+	void MemRetry(TBool aAsked);
+	static TInt MemLookCallback(TAny* aSelf);
+	static TInt MemAgainCallback(TAny* aSelf);
 	void Watchdog();
 	void EnginePriority();
 	TInt FreeRamKb() const;
@@ -349,6 +366,19 @@ private:
 	TBool iForeground;           // PsiPDF is in front
 	TBuf<64> iNote;              // why the page is not shown ("Could not show this page"...)
 	TBuf<100> iNoteWhy;          // ...and what to do
+	TInt iMemShort;              // (0.13) TPpMemShort: what failed for want of memory, to be tried again
+	TInt iMemShortKb;            // ...the free RAM then (KB)
+	TInt iMemShortLevel;         // ...and the memory service's level (-1: no service)
+	TBool iMemAuto;              // ...tried again by itself: a second failure says so on the page only
+	TBool iMemDialogUp;          // ...the dialog is up (nothing tried under it)
+	TInt iMemDialogAgain;        // ...times shown again after a message closed it
+	TBuf<64> iMemWhat;           // ...its first line
+	CPeriodic* iMemAgain;        // ...to show it again
+	CPpMemoryDialog* iMemDialog; // ...the dialog, while it is up
+	TInt iMemAgainWait;          // ...seconds waited for the front
+	TBool iMemAnswered;          // ...a button of it pressed (not closed by a message)
+	TFileName iMemFile;          // ...the file whose open failed
+	CPeriodic* iMemLook;         // ...memory looked at while it waits
 	TDisplayMode iMode;          // the pages' bitmaps: EColor256 or EGray16
 	TInt iPxPerInch;
 	// the file
@@ -700,6 +730,8 @@ CPpAppUi::~CPpAppUi()
 	delete iIdle;
 	delete iSoon;
 	delete iIdleStopper;
+	delete iMemLook;
+	delete iMemAgain;
 	delete iTick;
 	delete iWaiter;
 	delete iWatcher;
@@ -732,6 +764,8 @@ void CPpAppUi::ConstructL()
 	iIdle = CIdle::NewL(CActive::EPriorityStandard);
 	iSoon = CPeriodic::NewL(CActive::EPriorityStandard);
 	iIdleStopper = CPeriodic::NewL(CActive::EPriorityIdle);
+	iMemLook = CPeriodic::NewL(CActive::EPriorityIdle);
+	iMemAgain = CPeriodic::NewL(CActive::EPriorityIdle);
 	iMaxBytes = KPpMaxBytes;
 	iWaiter = new(ELeave) CPsiBellWaiter(TCallBack(BellCallback, this));
 	iWatcher = new(ELeave) CPpWatcher(*this);
@@ -1041,6 +1075,230 @@ void CPpAppUi::CannotShow(const TDesC& aWhat, const TDesC& aWhy)
 	TRAPD(err, iEikonEnv->InfoWinL(iNote, iNoteWhy));
 	}
 
+// (0.13) Not enough memory for the page (Dan's netBook, BETA 1.08: Linux
+// held 13.5 MB behind). Said in a dialog and on the page; the dialog's
+// "Free memory..." opens Coda's Free memory (PsiHub) where it runs, which
+// can put the programs behind to sleep or close them. The page is tried
+// again by itself once memory comes back (MemLookCallback), on coming back
+// to the front, or at a tap or Enter: before, it stayed blank until the
+// page was turned and turned back.
+void CPpAppUi::MemoryShort(TInt aKind, const TDesC& aWhat)
+	{
+	BusyEnd();
+	iMemShort = aKind;
+	iMemShortKb = FreeRamKb();
+	// (the level as it is now: the service's may be from before the page
+	// began, when less or more was free)
+	iMemShortLevel = PsiMemLevelNow() >= 0 ? PsiMemLevelOf(iMemShortKb * 1024) : -1;
+	iNote = aWhat.Left(Min(aWhat.Length(), iNote.MaxLength()));
+	iNoteWhy = _L("It shows by itself when memory is free - tap to try now");
+	TBuf<180> l;
+	l.Format(_L("shown: %S - %S (free RAM %d KB, level %d)"), &iNote, &iNoteWhy, iMemShortKb, iMemShortLevel);
+	Log(l);
+	iView->DrawNow();
+	if (!iMemLook->IsActive())
+		iMemLook->Start(KPpMemLookUs, KPpMemLookUs, TCallBack(MemLookCallback, this));
+	// tried again by itself and still too little: the page says so, no
+	// second dialog (unless the first was closed before it was answered)
+	TBool again = iMemAuto;
+	iMemAuto = EFalse;
+	if (again && (iMemAnswered || iMemDialogAgain >= 3))
+		return;
+	if (again)
+		iMemDialogAgain++;
+	else
+		{
+		iMemDialogAgain = 0;
+		iMemAnswered = EFalse;
+		}
+	MemoryDialog(aWhat, _L("Free memory from other programs - the page then shows by itself"));
+	}
+
+// (0.13) Not enough memory, with Coda's Free memory one button away. A
+// fixed width, as PsiPDF's other dialogs.
+class CPpMemoryDialog : public CPpFixedDialog
+	{
+public:
+	CPpMemoryDialog(const TDesC& aWhat, const TDesC& aWhy, TBool& aFree, TBool& aPressed) : CPpFixedDialog(500), iWhat(aWhat), iWhy(aWhy), iFree(aFree), iPressed(aPressed), iAnswered(EFalse) {}
+	// memory came back while it was up: it goes, and the page is shown
+	void Close()
+		{
+		TRAPD(err, TryExitL(EEikBidOk));
+		}
+	// (Esc is Continue too: there is no Cancel)
+	TKeyResponse OfferKeyEventL(const TKeyEvent& aKeyEvent, TEventCode aType)
+		{
+		// (EIKON closes a waiting dialog with Esc when a window-group
+		// message comes: Esc is not counted as an answer)
+		if (aType == EEventKey && aKeyEvent.iCode != EKeyEscape)
+			iAnswered = ETrue;
+		if (aType == EEventKey && aKeyEvent.iCode == EKeyEscape)
+			{
+			TryExitL(EEikBidOk);
+			return EKeyWasConsumed;
+			}
+		return CPpFixedDialog::OfferKeyEventL(aKeyEvent, aType);
+		}
+	void HandlePointerEventL(const TPointerEvent& aPointerEvent)
+		{
+		if (aPointerEvent.iType == TPointerEvent::EButton1Down)
+			iAnswered = ETrue;
+		CPpFixedDialog::HandlePointerEventL(aPointerEvent);
+		}
+private:
+	void PreLayoutDynInitL()
+		{
+		// (the title stays the resource's: SetTitleL writes into its buffer)
+		((CEikLabel*)Control(EPpDlgMemoryWhat))->SetTextL(iWhat.Left(Min(iWhat.Length(), 48)));
+		((CEikLabel*)Control(EPpDlgMemoryWhy))->SetTextL(iWhy.Left(Min(iWhy.Length(), 80)));
+		}
+	TBool OkToExitL(TInt aButtonId)
+		{
+		// (an answer is a key other than Esc, or a tap)
+		iFree = aButtonId == EPpBidFreeMemory;
+		iPressed = iAnswered || iFree;
+		return ETrue;
+		}
+	const TDesC& iWhat;
+	const TDesC& iWhy;
+	TBool& iFree;
+	TBool& iPressed;
+	TBool iAnswered;            // a key or a tap reached it
+	};
+
+void CPpAppUi::MemoryDialog(const TDesC& aWhat, const TDesC& aWhy)
+	{
+	const TUid watcher = { KPsiMemWatcherUid };
+	TApaTaskList tasks(iCoeEnv->WsSession());
+	if (!tasks.FindApp(watcher).Exists())
+		{
+		// (no Free memory to offer: the 5mx without Coda's PsiHub)
+		TRAPD(err, iEikonEnv->InfoWinL(aWhat, _L("Close other programs - the page then shows by itself")));
+		return;
+		}
+	TBool free = EFalse, pressed = EFalse;
+	CPpMemoryDialog* d = new CPpMemoryDialog(aWhat, aWhy, free, pressed);
+	if (!d)
+		return;
+	iMemWhat = aWhat.Left(Min(aWhat.Length(), iMemWhat.MaxLength()));
+	iMemDialogUp = ETrue;                    // (not tried again under it)
+	iMemDialog = d;
+	TRAPD(err, d->ExecuteLD(R_PP_MEMORY_DIALOG));
+	iMemDialog = NULL;
+	iMemDialogUp = EFalse;
+	if (pressed)
+		iMemAnswered = ETrue;
+	// (EIKON closes a waiting dialog, with no button, when a window-group
+	// message comes, and PsiHub's "trim" and "sleep" come just as memory
+	// runs out: shown again a moment later, once the message has been
+	// read, a few times while the page still waits)
+	if (err == KErrNone && !pressed && iMemShort && iMemDialogAgain < 3)
+		{
+		iMemDialogAgain++;
+		iMemAgainWait = 0;
+		iMemAgain->Cancel();
+		iMemAgain->Start(1000000, 1000000, TCallBack(MemAgainCallback, this));
+		}
+	if (err != KErrNone)
+		{
+		TBuf<40> l;
+		l.Format(_L("memory: the dialog left %d"), err);
+		Log(l);
+		}
+	if (err == KErrNone && free)
+		{
+		Log(_L("memory: Free memory asked for"));
+		PsiMemTell(iCoeEnv->WsSession(), KPsiMemDialog);
+		PsiMemFront(iCoeEnv->WsSession());   // (its dialog up already, behind: to the front)
+		}
+	}
+
+TInt CPpAppUi::MemAgainCallback(TAny* aSelf)
+	{
+	CPpAppUi* ui = (CPpAppUi*)aSelf;
+	// (PsiHub's "Memory low" takes the front for a moment as it comes: a
+	// few seconds are waited for PsiPDF to be in front again)
+	if (!ui->iForeground && ++ui->iMemAgainWait < 6)
+		return 1;
+	ui->iMemAgain->Cancel();
+	ui->iMemAgainWait = 0;
+	if (ui->iMemShort && ui->iForeground && !ui->iMemDialogUp && !ui->iCommands)
+		ui->MemoryDialog(ui->iMemWhat, _L("Free memory from other programs - the page then shows by itself"));
+	return 0;
+	}
+
+// (0.13) the page (or the file's open) tried again: asked (a tap, Enter),
+// or by itself (memory back, PsiPDF in front again)
+void CPpAppUi::MemRetry(TBool aAsked)
+	{
+	TInt kind = iMemShort;
+	if (kind == EPpMemNone)
+		return;
+	iMemShort = EPpMemNone;
+	iMemLook->Cancel();
+	iMemAuto = !aAsked;
+	TPtrC how(aAsked ? _L("asked") : _L("memory back"));
+	TBuf<80> l;
+	l.Format(_L("memory: tried again (%S), free RAM %d KB"), &how, FreeRamKb());
+	Log(l);
+	iNote.Zero();
+	iNoteWhy.Zero();
+	if (kind == EPpMemOpen)
+		{
+		TFileName f(iMemFile);
+		TRAPD(err, OpenPdfL(f));
+		iMemAuto = !aAsked;                  // (OpenPdfL starts afresh)
+		return;
+		}
+	if (!iOpen)
+		return;
+	DropPic(iShown);
+	iView->DrawNow();
+	Pump();
+	}
+
+// (0.13) every 2 s while a page waits for memory: in front, it is tried
+// again once the memory service's level has dropped, or 1 MB more is free
+TInt CPpAppUi::MemLookCallback(TAny* aSelf)
+	{
+	CPpAppUi* ui = (CPpAppUi*)aSelf;
+	if (ui->iMemShort == EPpMemNone)
+		{
+		ui->iMemLook->Cancel();
+		return 0;
+		}
+	if (!ui->iForeground || ui->iCommands)
+		return 1;
+	// (a lower level, with more free than at the failure; or 1 MB more)
+	TInt level = PsiMemLevelNow(), free = ui->FreeRamKb();
+	TBool back = (level >= 0 && ui->iMemShortLevel >= 0 && level < ui->iMemShortLevel && free > ui->iMemShortKb + KPpMemRetryKb / 4)
+		|| free >= ui->iMemShortKb + KPpMemRetryKb;
+	if (!back)
+		{
+		// (the free memory measured at the failure can be the engine's
+		// worst moment: the mark follows what is free once it has settled,
+		// so only memory that really comes back counts)
+		if (free > ui->iMemShortKb)
+			{
+			ui->iMemShortKb = free;
+			if (ui->iMemShortLevel >= 0)
+				ui->iMemShortLevel = PsiMemLevelOf(free * 1024);
+			}
+		return 1;
+		}
+	if (ui->iMemDialogUp)
+		{
+		// (its dialog still up: closed, and the page tried at the next look)
+		ui->iMemAgain->Cancel();
+		ui->iMemDialogAgain = 3;
+		if (ui->iMemDialog)
+			ui->iMemDialog->Close();
+		return 1;
+		}
+	ui->MemRetry(EFalse);
+	return 1;
+	}
+
 // The engine not ready long after it was started, or its job stuck: stopped
 // (killed: it may not be getting the processor at all, so it cannot be asked)
 // and the page says why. Only while PsiPDF is in front: behind, the engine
@@ -1214,7 +1472,10 @@ void CPpAppUi::JobDoneL(TInt aCmd)
 		if (result != PP_OK)
 			{
 			if (result == PP_E_MEMORY)
-				CannotShow(_L("Not enough memory to show this page"), _L("Close other programs, then open the file again"));
+				{
+				iMemFile = iFile;
+				MemoryShort(EPpMemOpen, _L("Not enough memory to show this page"));
+				}
 			else
 				Problem(_L("Cannot open this file"), result);
 			iFile.Zero();
@@ -1287,12 +1548,19 @@ void CPpAppUi::JobDoneL(TInt aCmd)
 				{
 				// nothing of it drawn: said on the page too
 				if (result == PP_E_MEMORY)
-					CannotShow(_L("Not enough memory to show this page"), _L("Close other programs, then try again"));
+					MemoryShort(EPpMemPage, _L("Not enough memory to show this page"));
 				else
 					CannotShow(_L("Cannot show this page"), _L("Part of it uses a feature PsiPDF does not have"));
 				}
 			else if (pic->iFailed)
 				PartDrawn(result);
+			else
+				{
+				// (0.13) drawn: nothing waits for memory, and a later failure is said again
+				iMemAuto = EFalse;
+				iMemShort = EPpMemNone;
+				iMemLook->Cancel();
+				}
 			iView->DrawNow();
 			// the 14 standard fonts' file could not be used (the engine drew
 			// their text in the one font it keeps): said once
@@ -1422,7 +1690,8 @@ void CPpAppUi::PumpL()
 				why = _L("Part of PsiPDF is missing - install PsiPDF again");
 			else if (err == KErrNoMemory)
 				{
-				CannotShow(_L("Not enough memory to show this page"), _L("Close other programs, then open the file again"));
+				iMemFile = iFile;
+				MemoryShort(EPpMemOpen, _L("Not enough memory to show this page"));
 				return;
 				}
 			else
@@ -1558,7 +1827,7 @@ void CPpAppUi::PumpL()
 					return;
 					}
 				if (iZoom == EZoomFitWidth)
-					CannotShow(_L("Not enough memory to show this page"), _L("Close other programs, then try again"));
+					MemoryShort(EPpMemPage, _L("Not enough memory to show this page"));
 				else
 					Problem(_L("Not enough memory to show this page"), PP_E_MEMORY);
 				if (iZoom != EZoomFitWidth)
@@ -1652,6 +1921,8 @@ void CPpAppUi::OpenPdfL(const TDesC& aName)
 	iFile = p.FullName();
 	iPassword.Zero();
 	iEngineFailed = EFalse;
+	iMemShort = EPpMemNone;                  // (0.13) a page waiting for memory: this file now
+	iMemLook->Cancel();
 	iPartTold = EFalse;
 	MarkTrying(ETrue);
 	iNote.Zero();
@@ -2206,6 +2477,12 @@ TKeyResponse CPpAppUi::KeyL(const TKeyEvent& aKeyEvent)
 			PanL(0, -(v.iHeight - 32));
 		break;
 	case EKeyEnter:
+		// (0.13) not enough memory before: tried again now
+		if (iMemShort)
+			{
+			MemRetry(ETrue);
+			break;
+			}
 		// a page stopped with Esc, or not all drawn: drawn again
 		if (iShown.iPage == iPage && iShown.iDone && iShown.iFailed && !(iJob == PP_CMD_RENDER && iJobPic == &iShown))
 			{
@@ -2241,6 +2518,13 @@ void CPpAppUi::PanL(TInt aDx, TInt aDy)
 
 void CPpAppUi::TapL(const TPoint& aPoint)
 	{
+	// (0.13) a tap on a page that did not fit in memory tries it again (on
+	// Dan's netBook only Next then Back drew it, with 15 MB free)
+	if (iMemShort)
+		{
+		MemRetry(ETrue);
+		return;
+		}
 	if (!iOpen)
 		return;
 	TRect v = iView->Rect();
@@ -2565,7 +2849,26 @@ void CPpAppUi::PartDrawn(TInt aResult)
 	{
 	TPtrC what(aResult == PP_E_MEMORY ? _L("Not enough memory to show all of this page") : _L("Cannot show all of this page"));
 	if (aResult == PP_E_MEMORY)
-		TellShort();
+		{
+		// (0.13) drawn again, all of it, when memory comes back; the
+		// dialog offers Coda's Free memory (MemoryShort)
+		TBool told = iPartTold;
+		iPartTold = ETrue;
+		if (told || iMemAuto)
+			{
+			iMemAuto = EFalse;
+			iMemShort = EPpMemPage;
+			iMemShortKb = FreeRamKb();
+			iMemShortLevel = PsiMemLevelNow() >= 0 ? PsiMemLevelOf(iMemShortKb * 1024) : -1;
+			if (!iMemLook->IsActive())
+				iMemLook->Start(KPpMemLookUs, KPpMemLookUs, TCallBack(MemLookCallback, this));
+			if (told)
+				iEikonEnv->InfoMsg(what);
+			return;
+			}
+		MemoryShort(EPpMemPage, what);
+		return;
+		}
 	if (iPartTold)
 		{
 		iEikonEnv->InfoMsg(what);
@@ -2779,10 +3082,14 @@ void CPpAppUi::HandleForegroundEventL(TBool aForeground)
 		else if (iRunning && iOpen)
 			iIdleStopper->Start(KPpIdleStop, KPpIdleStop, TCallBack(IdleStopCallback, this));
 		}
+	else if (iMemShort && !iAsleep && !iMemDialogUp)
+		MemRetry(EFalse);                    // (0.13) back in front: the page tried again
 	else if (iAsleep)
 		{
 		// back: the file opened again where it was
 		iAsleep = EFalse;
+		iMemShort = EPpMemNone;              // (0.13) (the page is drawn afresh anyway)
+		iMemLook->Cancel();
 		iReopen = ETrue;
 		TBuf<60> l;
 		l.Format(_L("engine: back in front, free RAM %d KB"), FreeRamKb());
