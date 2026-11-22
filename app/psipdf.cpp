@@ -8,10 +8,9 @@
 //   Shift+Ctrl+B, the toolbar, Space and Backspace at the foot and the head
 //   of a page, or the dog-ears in the bottom corners. Ctrl+Fn+Up and Down:
 //   the first and last page. Edit > Go to page (Ctrl+G).
-// - Zoom: Ctrl+M and Shift+Ctrl+M step through fit page, fit width, 100%,
-//   150% and 200% in the order of their size on the page (100% is the
-//   page's real size on this screen), stopping at the largest and the
-//   smallest. Ctrl+W: fit width (the standard); Shift+Ctrl+W: fit page.
+// - Zoom: Ctrl+M and Shift+Ctrl+M cycle round fit page, fit width, 100%,
+//   150% and 200% (100% is the page's real size on this screen). Ctrl+W:
+//   fit width (the standard); Shift+Ctrl+W: fit page.
 // - Move round a page: the arrow keys (Ctrl: a screen at a time), Home and
 //   End (its top and foot), or drag with the pen.
 // - Edit > Find (Ctrl+F) and Find next (Ctrl+J): text, in any case.
@@ -89,7 +88,7 @@ static const TPsiHelpTopic KPpHelp[] =
 	  "bottom corners) turn the page; Ctrl+Fn+Up and Ctrl+Fn+Down go to the first and last page, "
 	  "and Edit > Go to page (Ctrl+G) to any. The arrow keys, or the pen, move round the page.\n\n"
 	  "A file opens fitted to the width of the screen. Ctrl+M zooms in and Shift+Ctrl+M out, a step "
-	  "at a time in order of size (the whole page, the width, 100%, 150% and 200%), as far as the largest and the smallest. "
+	  "at a time in order of size: the whole page, the width, 100%, 150% and 200%, then round again. "
 	  "Ctrl+W fits the width, Shift+Ctrl+W the whole page. View > Zoom to has them all." },
 	{ "Finding text",
 	  "Edit > Find (Ctrl+F) finds text, in any case, from the page shown onwards; Find next (Ctrl+J) "
@@ -2257,7 +2256,7 @@ void CPpAppUi::SetZoomL(TInt aZoom)
 	iEikonEnv->InfoMsg(TPtrC(names[aZoom]));
 	}
 
-// Zoom in and out: the zooms in the order of their size on this page
+// Zoom in and out: round the zooms in the order of their size on this page
 void CPpAppUi::ZoomStepL(TInt aDir)
 	{
 	if (NoFile())
@@ -2279,20 +2278,18 @@ void CPpAppUi::ZoomStepL(TInt aDir)
 	for (i = 0; i < EZoomCount; i++)
 		if (order[i] == iZoom)
 			at = i;
-	// (zooms of the same size are one step; 0.15, RR-10: it stops at the
-	// largest and the smallest, as Psion's programs do, and says so; it
-	// went round from one end to the other)
+	// (zooms of the same size are one step; it wraps round at the ends, as
+	// the EIKON style guide has zooms do)
 	TInt cur = scale[iZoom];
-	for (i = at + aDir; i >= 0 && i < EZoomCount; i += aDir)
+	for (i = 1; i <= EZoomCount; i++)
 		{
-		TInt k = order[i];
+		TInt k = order[(at + aDir * i + 2 * EZoomCount) % EZoomCount];
 		if (Abs(scale[k] - cur) * 50 > cur)
 			{
 			SetZoomL(k);
 			return;
 			}
 		}
-	iEikonEnv->InfoMsg(aDir > 0 ? _L("Largest zoom") : _L("Smallest zoom"));
 	}
 
 void CPpAppUi::UpdateLabelL()

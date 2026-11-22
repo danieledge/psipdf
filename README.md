@@ -26,7 +26,7 @@ PsiPDF opens a PDF from the System screen, from PsiHub or with File > Open, and 
 | Previous page | Fn+Up (Page up) | Shift+Ctrl+B, the toolbar's Back, the bottom-left dog-ear, Backspace at the head of a page |
 | First or last page | Ctrl+Fn+Up, Ctrl+Fn+Down | View > First page, Last page |
 | Go to a page | Ctrl+G | Edit > Go to page |
-| Zoom in or out | Ctrl+M, Shift+Ctrl+M | the toolbar; a step at a time in order of size (fit page, fit width, 100%, 150%, 200%), stopping at the largest and the smallest ("Largest zoom", "Smallest zoom") |
+| Zoom in or out | Ctrl+M, Shift+Ctrl+M | the toolbar; the zooms go round: fit page, fit width, 100%, 150%, 200% |
 | Fit the width (a file opens so) | Ctrl+W | View > Zoom to > Fit width |
 | Fit the page | Shift+Ctrl+W | View > Zoom to > Fit page |
 | Move round the page | the arrow keys (Ctrl: a screen at a time) | drag with the pen |
