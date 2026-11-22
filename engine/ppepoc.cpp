@@ -451,8 +451,11 @@ static TInt RunL()
 		app.LogonCancel(gone);
 		User::WaitForRequest(gone);
 		}
-	if (e.iDoc)
-		pp_close(e.iDoc);
+	// (0.14, RN-25) the file is not closed piece by piece: the process's end
+	// gives its heap back whole, at once. pp_close freed every block of
+	// MuPDF's heap one at a time, at a priority below every program's, and
+	// on Dan's netBook PsiPDF's close outwaited it ("engine did not end:
+	// killed")
 	e.iRinger.Close();
 	s->state = PP_STATE_EXITED;
 	RFbsSession::Disconnect();

@@ -66,7 +66,7 @@
 #include "psierr.h"                  // an error as words for a message (0.12: psion-core's, build.sh copies it)
 
 const TUid KUidPsiPdf = { 0x01000AD8 };
-_LIT(KPpVersion, "0.13");
+_LIT(KPpVersion, "0.14");
 _LIT(KPpIni, "C:\\System\\Apps\\PsiPDF\\PsiPDF.ini");
 _LIT(KPpLog, "C:\\System\\Apps\\PsiPDF\\PsiPDF.log");
 _LIT(KPpLogOld, "C:\\System\\Apps\\PsiPDF\\PsiPDF.old");
@@ -118,11 +118,15 @@ const TInt KPpRecent = 8;                    // files whose page and zoom are re
 // Memory (the netBook has about 16 MB free after it starts, shared by every
 // program; the 5mx, 8 or 16 MB). What PsiPDF may take is set when a file
 // opens, from the free RAM then:
-// - the biggest page bitmap: a quarter of it, from 1 MB (a page fitted to
-//   the width: 580 KB) up to 6 MB (200% on an A4 page is 4 MB: with less
-//   memory it is drawn a little smaller);
-// - MuPDF's store (decoded pictures, fonts): a quarter of it, from 1 MB up
+// - the biggest page bitmap: a fifth of it (0.14; a quarter before), from
+//   1 MB (a page fitted to the width: 580 KB) up to 6 MB (200% on an A4
+//   page is 4 MB: with less memory it is drawn a little smaller);
+// - MuPDF's store (decoded pictures, fonts): a fifth of it, from 1 MB up
 //   to 3 MB (2 MB on the 5mx); a picture is decoded no bigger than this.
+// What it holds is bounded by these: in the netBook emulator, 12 pages
+// forward and back at fit width and at 200%, twice, the engine's heap
+// stayed at 1.2 MB (peak 1.9 MB) and the free memory came back to the same
+// figures in the second round as in the first.
 const TInt KPpMaxBytes = 6 * 1024 * 1024;
 // (0.06) no page bitmap wider or taller than this, whatever the page's size
 const TInt KPpMaxSide = 16384;
@@ -131,7 +135,10 @@ const TInt KPpStoreMinKb = 1024;
 // the next page is drawn ahead only while it is small (fit width or fit
 // page: up to 1 MB) and this much free memory is left after it
 const TInt KPpAheadMaxBytes = 1024 * 1024;
-const TInt KPpAheadSpare = 3 * 1024 * 1024;
+const TInt KPpAheadSpare = 4 * 1024 * 1024;   // (0.14: 3 MB before)
+// (0.14, RN-25) the store and the biggest page bitmap: each a fifth of the
+// memory free as the file opens (a quarter before)
+const TInt KPpShareOfFree = 5;
 // PsiPDF behind this long with a file open: its engine (MuPDF, 3 to 8 MB with
 // its code) is stopped, and the file opened again, at the same page and
 // zoom, when PsiPDF comes back; the page on the screen is kept meanwhile
@@ -994,8 +1001,13 @@ void CPpAppUi::StopEngine()
 	iS->cookie.abort = 1;
 	iS->cmd = PP_CMD_QUIT;
 	iS->cmd_seq++;
+	// (0.14, RN-25) its last steps at the program's own priority: below
+	// every program's, as while it draws, it could wait behind a busy one
+	// (PsiLinux, PsiCast) past the time given here, and was killed
+	iProcess.SetPriority(::EPriorityForeground);
 	iRinger.Ring(&iS->eng_bell);
-	for (TInt i = 0; i < 20 && iS->state != PP_STATE_EXITED; i++)
+	TInt start = User::TickCount();
+	for (TInt i = 0; i < 30 && iS->state != PP_STATE_EXITED; i++)
 		User::After(100000);
 	// (PP_STATE_EXITED is said just before the engine's last steps: it has
 	// a second more to be gone, else it is ended here, never left behind)
@@ -1007,6 +1019,12 @@ void CPpAppUi::StopEngine()
 		l.Format(_L("engine: did not end (state %d): killed"), iS->state);
 		Log(l);
 		iProcess.Kill(0);
+		}
+	else
+		{
+		TBuf<40> l;
+		l.Format(_L("engine: ended in %d ms"), (TInt)((User::TickCount() - start) * 1000 / 64));
+		Log(l);
 		}
 	iProcess.Close();
 	// (the bell's handle on the engine's thread kept the ended engine's
@@ -1765,8 +1783,11 @@ void CPpAppUi::PumpL()
 		// band, but no more than a quarter of the free memory (from 1 MB);
 		// and the biggest page bitmap, the same
 		TInt free = FreeRamKb();
-		iStoreKb = Max(KPpStoreMinKb, Min(iMode == EColor256 ? 3072 : 2048, free / 4));
-		iMaxBytes = Max(KPpMinBytes, Min(KPpMaxBytes, free / 4 * 1024));
+		// (0.14, RN-25) a fifth of the free memory each, not a quarter: on
+		// Dan's netBook, open at 8 MB free, PsiPDF took 3.3 MB with a page
+		// zoomed (8.0 -> 4.7 MB), the most of any program that night
+		iStoreKb = Max(KPpStoreMinKb, Min(iMode == EColor256 ? 3072 : 2048, free / KPpShareOfFree));
+		iMaxBytes = Max(KPpMinBytes, Min(KPpMaxBytes, free / KPpShareOfFree * 1024));
 		s->store_kb = iStoreKb;
 		TBuf<100> l;
 		l.Format(_L("memory: free RAM %d KB: store %d KB, pages up to %d KB"), free, iStoreKb, iMaxBytes / 1024);
