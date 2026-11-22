@@ -8,9 +8,10 @@
 //   Shift+Ctrl+B, the toolbar, Space and Backspace at the foot and the head
 //   of a page, or the dog-ears in the bottom corners. Ctrl+Fn+Up and Down:
 //   the first and last page. Edit > Go to page (Ctrl+G).
-// - Zoom: Ctrl+M and Shift+Ctrl+M cycle round fit page, fit width, 100%,
-//   150% and 200% (100% is the page's real size on this screen). Ctrl+W:
-//   fit width (the standard); Shift+Ctrl+W: fit page.
+// - Zoom: Ctrl+M and Shift+Ctrl+M step through fit page, fit width, 100%,
+//   150% and 200% in the order of their size on the page (100% is the
+//   page's real size on this screen), stopping at the largest and the
+//   smallest. Ctrl+W: fit width (the standard); Shift+Ctrl+W: fit page.
 // - Move round a page: the arrow keys (Ctrl: a screen at a time), Home and
 //   End (its top and foot), or drag with the pen.
 // - Edit > Find (Ctrl+F) and Find next (Ctrl+J): text, in any case.
@@ -49,6 +50,8 @@
 #include <eikdialg.hrh>
 #include <eikmenu.hrh>
 #include <eikdialg.h>
+#include <eikmsg.h>
+#include <clock.h>
 #include <eikedwin.h>
 #include <eikmfne.h>
 #include <eikseced.h>
@@ -66,7 +69,7 @@
 #include "psierr.h"                  // an error as words for a message (0.12: psion-core's, build.sh copies it)
 
 const TUid KUidPsiPdf = { 0x01000AD8 };
-_LIT(KPpVersion, "0.14");
+_LIT(KPpVersion, "0.15");
 _LIT(KPpIni, "C:\\System\\Apps\\PsiPDF\\PsiPDF.ini");
 _LIT(KPpLog, "C:\\System\\Apps\\PsiPDF\\PsiPDF.log");
 _LIT(KPpLogOld, "C:\\System\\Apps\\PsiPDF\\PsiPDF.old");
@@ -86,7 +89,7 @@ static const TPsiHelpTopic KPpHelp[] =
 	  "bottom corners) turn the page; Ctrl+Fn+Up and Ctrl+Fn+Down go to the first and last page, "
 	  "and Edit > Go to page (Ctrl+G) to any. The arrow keys, or the pen, move round the page.\n\n"
 	  "A file opens fitted to the width of the screen. Ctrl+M zooms in and Shift+Ctrl+M out, a step "
-	  "at a time in order of size: the whole page, the width, 100%, 150% and 200%, then round again. "
+	  "at a time in order of size (the whole page, the width, 100%, 150% and 200%), as far as the largest and the smallest. "
 	  "Ctrl+W fits the width, Shift+Ctrl+W the whole page. View > Zoom to has them all." },
 	{ "Finding text",
 	  "Edit > Find (Ctrl+F) finds text, in any case, from the page shown onwards; Find next (Ctrl+J) "
@@ -229,6 +232,27 @@ private:
 // ---------------------------------------------------------------------------
 // The program
 // ---------------------------------------------------------------------------
+
+// (0.15, RR-10) the busy message, as EIKON's in every way (its window,
+// font, colours, border and corner) but steady: EIKON's flashes, and half
+// the time it is an empty dark box. On the netBook, where a page takes
+// several seconds, that was what showed after a zoom
+class CPpBusyWin : public CEikBusyMsgWin
+	{
+public:
+	CPpBusyWin(CEikonEnv& aEnv) : CEikBusyMsgWin(aEnv) {}
+	void Show(const TDesC& aText, TTimeIntervalMicroSeconds32 aDelay)
+		{
+		iDelay = aDelay;
+		StartDisplay(aText, EHLeftVBottom);
+		}
+private:
+	void DoStartDisplay(const TDesC& aText)
+		{
+		iMessageWindow->StartDisplay(EFalse, iDelay, aText);
+		}
+	TTimeIntervalMicroSeconds32 iDelay;
+	};
 
 class CPpAppUi : public CEikAppUi
 	{
@@ -412,6 +436,7 @@ private:
 	TBool iDiagOn;               // (0.06) Coda's debug mode (PsiDiag.on) at the start
 	TBool iLogOn;                // either: PsiPDF.log is written
 	TBool iBusy;
+	CPpBusyWin* iBusyWin;        // (0.15) the steady busy message; 0: EIKON's
 	// find
 	TBuf<60> iFindText;
 	TInt iHitPage;               // the page iHit is on, or -1
@@ -748,6 +773,7 @@ CPpAppUi::~CPpAppUi()
 	DropPic(iShown);
 	DropPic(iAhead);
 	delete[] iSizes;
+	delete iBusyWin;
 	if (iView)
 		{
 		RemoveFromStack(iView);
@@ -2231,7 +2257,7 @@ void CPpAppUi::SetZoomL(TInt aZoom)
 	iEikonEnv->InfoMsg(TPtrC(names[aZoom]));
 	}
 
-// Zoom in and out: round the zooms in the order of their size on this page
+// Zoom in and out: the zooms in the order of their size on this page
 void CPpAppUi::ZoomStepL(TInt aDir)
 	{
 	if (NoFile())
@@ -2253,17 +2279,20 @@ void CPpAppUi::ZoomStepL(TInt aDir)
 	for (i = 0; i < EZoomCount; i++)
 		if (order[i] == iZoom)
 			at = i;
-	// (zooms of the same size are one step)
+	// (zooms of the same size are one step; 0.15, RR-10: it stops at the
+	// largest and the smallest, as Psion's programs do, and says so; it
+	// went round from one end to the other)
 	TInt cur = scale[iZoom];
-	for (i = 1; i <= EZoomCount; i++)
+	for (i = at + aDir; i >= 0 && i < EZoomCount; i += aDir)
 		{
-		TInt k = order[(at + aDir * i + 2 * EZoomCount) % EZoomCount];
+		TInt k = order[i];
 		if (Abs(scale[k] - cur) * 50 > cur)
 			{
 			SetZoomL(k);
 			return;
 			}
 		}
+	iEikonEnv->InfoMsg(aDir > 0 ? _L("Largest zoom") : _L("Smallest zoom"));
 	}
 
 void CPpAppUi::UpdateLabelL()
@@ -2836,6 +2865,24 @@ void CPpAppUi::DynInitMenuPaneL(TInt aMenuId, CEikMenuPane* aMenuPane)
 void CPpAppUi::Busy(const TDesC& aText)
 	{
 	BusyEnd();
+	if (!iBusyWin)
+		{
+		CPpBusyWin* w = new CPpBusyWin(*iEikonEnv);
+		TInt err = KErrNoMemory;
+		if (w)
+			TRAP(err, w->ConstructL(iCoeEnv->RootWin()));
+		if (err == KErrNone)
+			iBusyWin = w;
+		else
+			delete w;
+		}
+	if (iBusyWin)
+		{
+		iBusyWin->Show(aText.Left(Min(aText.Length(), KEikBusyMsgMaxLen)), TTimeIntervalMicroSeconds32(300000));
+		iBusy = ETrue;
+		return;
+		}
+	// (short of memory for the window: EIKON's own, which flashes)
 	TRAPD(err, iEikonEnv->BusyMsgL(aText, EHLeftVBottom, TTimeIntervalMicroSeconds32(300000)));
 	iBusy = err == KErrNone;
 	}
@@ -2843,7 +2890,12 @@ void CPpAppUi::Busy(const TDesC& aText)
 void CPpAppUi::BusyEnd()
 	{
 	if (iBusy)
-		iEikonEnv->BusyMsgCancel();
+		{
+		if (iBusyWin)
+			iBusyWin->CancelDisplay();
+		else
+			iEikonEnv->BusyMsgCancel();
+		}
 	iBusy = EFalse;
 	}
 

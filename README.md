@@ -26,7 +26,7 @@ PsiPDF opens a PDF from the System screen, from PsiHub or with File > Open, and 
 | Previous page | Fn+Up (Page up) | Shift+Ctrl+B, the toolbar's Back, the bottom-left dog-ear, Backspace at the head of a page |
 | First or last page | Ctrl+Fn+Up, Ctrl+Fn+Down | View > First page, Last page |
 | Go to a page | Ctrl+G | Edit > Go to page |
-| Zoom in or out | Ctrl+M, Shift+Ctrl+M | the toolbar; the zooms go round: fit page, fit width, 100%, 150%, 200% |
+| Zoom in or out | Ctrl+M, Shift+Ctrl+M | the toolbar; a step at a time in order of size (fit page, fit width, 100%, 150%, 200%), stopping at the largest and the smallest ("Largest zoom", "Smallest zoom") |
 | Fit the width (a file opens so) | Ctrl+W | View > Zoom to > Fit width |
 | Fit the page | Shift+Ctrl+W | View > Zoom to > Fit page |
 | Move round the page | the arrow keys (Ctrl: a screen at a time) | drag with the pen |
@@ -41,7 +41,7 @@ PsiPDF opens a PDF from the System screen, from PsiHub or with File > Open, and 
 
 100% is the page at its real size on the screen in use. On the netBook the toolbar shows the page ("Page 3 of 12") under its buttons, and on Coda's image Coda's battery, gauges and clock below that, as in Psion's own programs; on the 5mx, whose toolbar has room only for the buttons and the clock, and with the toolbar hidden, an infoprint says the page when it changes.
 
-The page appears as it is drawn, from the top down, with "Drawing the page…" bottom left. While you read it, PsiPDF draws the next page ahead (when it is fitted to the width or the page, and there is memory to spare), so turning the page is immediate.
+The page appears as it is drawn, from the top down, with "Drawing the page…" bottom left. (0.15) The message is EIKON's busy message, but steady: EIKON's own flashes, and on the netBook, where a zoomed page can take several seconds, it was often caught as an empty dark box. While you read it, PsiPDF draws the next page ahead (when it is fitted to the width or the page, and there is memory to spare), so turning the page is immediate.
 
 Left behind other programs for five minutes with a file open, PsiPDF stops its engine (MuPDF, 3 to 9 MB with its code), keeping the page on the screen; coming back to it opens the file again at the same page and zoom.
 
