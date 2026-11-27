@@ -68,7 +68,7 @@
 #include "psierr.h"                  // an error as words for a message (0.12: psion-core's, build.sh copies it)
 
 const TUid KUidPsiPdf = { 0x01000AD8 };
-_LIT(KPpVersion, "0.15");
+_LIT(KPpVersion, "0.16");
 _LIT(KPpIni, "C:\\System\\Apps\\PsiPDF\\PsiPDF.ini");
 _LIT(KPpLog, "C:\\System\\Apps\\PsiPDF\\PsiPDF.log");
 _LIT(KPpLogOld, "C:\\System\\Apps\\PsiPDF\\PsiPDF.old");
@@ -857,7 +857,7 @@ TBool CPpAppUi::ProcessCommandParametersL(TApaCommand aCommand, TFileName& aDocu
 			Log(l);
 			iCoeEnv->FsSession().Delete(KPpTrying);
 			iNote = _L("Last file not opened again");
-			iNoteWhy = _L("It did not show last time - open it with Ctrl+O");
+			iNoteWhy = _L("It did not show last time. Open it with Ctrl+O");
 			}
 		else
 			OpenPdfL(iRecent[0].iFile);
@@ -1134,7 +1134,7 @@ void CPpAppUi::MemoryShort(TInt aKind, const TDesC& aWhat)
 	// began, when less or more was free)
 	iMemShortLevel = PsiMemLevelNow() >= 0 ? PsiMemLevelOf(iMemShortKb * 1024) : -1;
 	iNote = aWhat.Left(Min(aWhat.Length(), iNote.MaxLength()));
-	iNoteWhy = _L("It shows by itself when memory is free - tap to try now");
+	iNoteWhy = _L("It shows by itself when memory is free. Tap to try now");
 	TBuf<180> l;
 	l.Format(_L("shown: %S - %S (free RAM %d KB, level %d)"), &iNote, &iNoteWhy, iMemShortKb, iMemShortLevel);
 	Log(l);
